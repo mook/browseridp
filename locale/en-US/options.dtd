@@ -1,0 +1,10 @@
+<!ENTITY section.add.title "Add Site">
+<!ENTITY section.add.desc "Add a new site">
+<!ENTITY cmd.generate.label "Generate">
+<!ENTITY cmd.generate.tooltiptext "Generate a new key pair">
+<!ENTITY cmd.import.label "Import">
+<!ENTITY cmd.import.tooltiptext "Import an existing key pair">
+<!ENTITY cmd.export.label "Export">
+<!ENTITY cmd.export.tooltiptext "Export this key pair">
+<!ENTITY cmd.delete.label "Delete">
+<!ENTITY cmd.delete.tooltiptext "Delete this key pair">

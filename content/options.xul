@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!DOCTYPE options SYSTEM "chrome://browseridp/locale/options.dtd">
+
+<?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
+
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+    <setting type="control" title="&section.add.title;"
+             desc="&section.add.desc;">
+        <button data-id="cmdGenerate"
+                label="&cmd.generate.label;"
+                tooltiptext="&cmd.generate.tooltiptext;"/>
+        <button data-id="cmdImport"
+                label="&cmd.import.label;"
+                tooltiptext="&cmd.import.tooltiptext;"/>
+    </setting>
+    <setting type="control" data-id="template" collapsed="true"
+             data-export-label="&cmd.export.label;"
+             data-export-tooltiptext="&cmd.export.tooltiptext;"
+             data-delete-label="&cmd.delete.label;"
+             data-delete-tooltiptext="&cmd.delete.tooltiptext;"/>
+</vbox>
