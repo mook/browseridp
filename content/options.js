@@ -1,9 +1,14 @@
 const EXPORTED_SYMBOLS = ["Options"];
 
-const { utils: Cu, interfaces: Ci } = Components;
+const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+
+function getString(doc, key) {
+    let template = doc.querySelector("#detail-rows > setting[data-id='template']");
+    return template.getAttribute("data-" + key);
+}
 
 const Options = {
     startup: function Options_startup(data) {
@@ -24,26 +29,100 @@ const Options = {
             }
         }
     },
-    onGenerate: function Options_onGenerate() {
-        Cu.reportError("generate!");
-        try {
-        let worker = ChromeWorker("chrome://browseridp/content/crypto.js?" + Date.now());
-        worker.onmessage = function(event) {
-            if (("rv" in event.data) && event.data.rv) {
-                Cu.reportError(event.data.rv + ": " + String(event.data.message));
-                return;
-            }
-            Cu.reportError("result: " + JSON.stringify(event.data));
+    onGenerate: function Options_onGenerate(event) {
+        let doc = event.target.ownerDocument;
+        let container = doc.querySelector("#detail-rows > setting[data-id='setting-global']");
+        container.querySelector("button[data-id='cmdGenerate']").collapsed = true;
+        container.querySelector("button[data-id='cmdGenerateBusy']").collapsed = false;
+        function cleanup() {
+            container.querySelector("button[data-id='cmdGenerate']").collapsed = false;
+            container.querySelector("button[data-id='cmdGenerateBusy']").collapsed = true;
         }
-        worker.postMessage({command: "generate",
-                            alg: "RS256"});
-        } catch (ex) { Cu.reportError(ex); }
+        var host = undefined, result = null;
+        function accept() {
+            let oldLogins = Services.logins.findLogins({}, "x-browseridp:",
+                                                       null, host);
+            if (oldLogins.length) {
+                var bag = Cc["@mozilla.org/hash-property-bag;1"]
+                            .createInstance(Ci.nsIWritablePropertyBag2);
+                bag.setPropertyAsAString("username", JSON.stringify(result.pubkey));
+                bag.setPropertyAsAString("password", JSON.stringify(result.privateKey));
+                Services.logins.modifyLogin(oldLogins[0], bag);
+            } else {
+                let login = Cc["@mozilla.org/login-manager/loginInfo;1"]
+                              .createInstance(Ci.nsILoginInfo);
+                login.init("x-browseridp:",
+                           null, host,
+                           JSON.stringify(result.pubkey),
+                           JSON.stringify(result.privateKey),
+                           "", "");
+                Services.logins.addLogin(login);
+            }
+            // redraw the whole page to show the new domain
+            Services.tm.currentThread.dispatch(function() {
+                Options.onAddonOptionsHidden(doc);
+                Options.onAddonOptionsDisplayed(doc);
+            }, Ci.nsIEventTarget.DISPATCH_NORMAL);
+        }
+        try {
+            var worker = ChromeWorker("chrome://browseridp/content/crypto.js?" + Date.now());
+            worker.onmessage = function(event) {
+                try {
+                    if (("rv" in event.data) && event.data.rv) {
+                        Cu.reportError(event.data.rv + ": " + String(event.data.message));
+                        return;
+                    }
+                    result = event.data;
+                    if (host !== undefined) {
+                        if (host) {
+                            accept();
+                        }
+                        cleanup();
+                    }
+                } catch (ex) {
+                    Cu.reportError(ex);
+                }
+            }
+            worker.postMessage({command: "generate",
+                                alg: "RS256"});
+            let hostBuffer = {value: null};
+            var rv = Services.prompt.prompt(doc.defaultView,
+                                            getString(doc, "generate-prompt-title"),
+                                            getString(doc, "generate-prompt-text"),
+                                            hostBuffer, null, {value: false});
+            host = !rv ? null : hostBuffer.value;
+            if (result !== null) {
+                accept();
+                cleanup();
+            }
+        } catch (ex) {
+            Cu.reportError(ex);
+            cleanup();
+        }
+    },
+    onDelete: function Options_onDelete(event) {
+        let setting = event.target;
+        while (setting && setting.localName != "setting") {
+            setting = setting.parentNode;
+        }
+        if (!setting) return;
+        let doc = setting.ownerDocument;
+        let host = setting.getAttribute("data-host");
+        if (!host) return;
+        let logins = Services.logins.findLogins({}, "x-browseridp:",
+                                                null, host);
+        if (logins.length) {
+            Services.logins.removeLogin(logins[0]);
+        }
+        Services.tm.currentThread.dispatch(function() {
+            Options.onAddonOptionsHidden(doc);
+            Options.onAddonOptionsDisplayed(doc);
+        }, Ci.nsIEventTarget.DISPATCH_NORMAL);
     },
     onAddonOptionsDisplayed: function Options_onAddonOptionsDisplayed(doc) {
         let logins = Services.logins.findLogins({}, "x-browseridp:",
                                                 null, "")
                              .sort(function(a, b) a.httpRealm.localeCompare(b.httpRealm));
-        let template = doc.querySelector("#detail-rows > setting[data-id='template']");
         for each (let login in logins) {
             let setting = doc.createElement("setting");
             setting.setAttribute("data-host", login.httpRealm);
@@ -51,26 +130,26 @@ const Options = {
             setting.setAttribute("type", "control");
             doc.getElementById("detail-rows").appendChild(setting);
             let cmdExport = doc.createElement("button");
-            cmdExport.setAttribute("label",
-                                   template.getAttribute("data-export-label"));
-            cmdExport.setAttribute("tooltiptext",
-                                   template.getAttribute("data-export-tooltiptext"));
+            cmdExport.setAttribute("label", getString(doc, "export-label"));
+            cmdExport.setAttribute("tooltiptext", getString(doc, "export-tooltiptext"));
             setting.appendChild(cmdExport);
             let cmdDelete = doc.createElement("button");
-            cmdDelete.setAttribute("label",
-                                   template.getAttribute("data-delete-label"));
-            cmdDelete.setAttribute("tooltiptext",
-                                   template.getAttribute("data-delete-tooltiptext"));
+            cmdDelete.setAttribute("label", getString(doc, "delete-label"));
+            cmdDelete.setAttribute("tooltiptext", getString(doc, "delete-tooltiptext"));
             setting.appendChild(cmdDelete);
+            cmdDelete.addEventListener("command", Options.onDelete, false);
         }
-        doc.querySelector("#detail-rows button[data-id='cmdGenerate']")
-           .addEventListener("command", this.onGenerate);
+        doc.querySelector("#detail-rows > setting[data-id='setting-global'] > button[data-id='cmdGenerate']")
+           .addEventListener("command", this.onGenerate, false);
     },
     onAddonOptionsHidden: function Options_onAddonOptionsHidden(doc) {
-        let settings = document.querySelectorAll("#detail-rows > setting[data-host]");
+        let settings = doc.querySelectorAll("#detail-rows > setting[data-host]");
         for each (let setting in Array.slice(settings)) {
-            setting.parentNode.removeChild(settings);
+            setting.removeEventListener("command", Options.onDelete);
+            setting.parentNode.removeChild(setting);
         }
+        doc.querySelector("#detail-rows > setting[data-id='setting-global'] > button[data-id='cmdGenerate']")
+           .removeEventListener("command", this.onGenerate);
     },
     QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver]),
 };

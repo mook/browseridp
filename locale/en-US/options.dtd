@@ -2,6 +2,10 @@
 <!ENTITY section.add.desc "Add a new site">
 <!ENTITY cmd.generate.label "Generate">
 <!ENTITY cmd.generate.tooltiptext "Generate a new key pair">
+<!ENTITY cmd.generate.busy.label "Generating...">
+<!ENTITY cmd.generate.busy.tooltiptext "Generating a key pair, please wait...">
+<!ENTITY cmd.generate.prompt.title "Generating new key pair &#x2014; BrowserIdP">
+<!ENTITY cmd.generate.prompt.text "Please enter the domain this Persona IdP will be for">
 <!ENTITY cmd.import.label "Import">
 <!ENTITY cmd.import.tooltiptext "Import an existing key pair">
 <!ENTITY cmd.export.label "Export">

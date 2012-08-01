@@ -5,10 +5,15 @@
 
 <vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
     <setting type="control" title="&section.add.title;"
-             desc="&section.add.desc;">
+             desc="&section.add.desc;" data-id="setting-global">
         <button data-id="cmdGenerate"
                 label="&cmd.generate.label;"
                 tooltiptext="&cmd.generate.tooltiptext;"/>
+        <button data-id="cmdGenerateBusy"
+                label="&cmd.generate.busy.label;"
+                tooltiptext="&cmd.generate.busy.tooltiptext;"
+                image="chrome://global/skin/icons/loading_16.png"
+                collapsed="true" disabled="true"/>
         <button data-id="cmdImport"
                 label="&cmd.import.label;"
                 tooltiptext="&cmd.import.tooltiptext;"/>
@@ -17,5 +22,7 @@
              data-export-label="&cmd.export.label;"
              data-export-tooltiptext="&cmd.export.tooltiptext;"
              data-delete-label="&cmd.delete.label;"
-             data-delete-tooltiptext="&cmd.delete.tooltiptext;"/>
+             data-delete-tooltiptext="&cmd.delete.tooltiptext;"
+             data-generate-prompt-title="&cmd.generate.prompt.title;"
+             data-generate-prompt-text="&cmd.generate.prompt.text;"/>
 </vbox>
