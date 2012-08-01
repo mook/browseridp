@@ -215,9 +215,14 @@ function generate(params) {
                     message: "Failed to export private key" };
         }
 
+        let pubkeyData = { alg: params.alg };
+        if (/^RS/.test(params.alg)) {
+            pubkeyData.algorithm = "RS";
+            pubkeyData.mod = encodeSECItem(publicKey.contents.rsa.modulus);
+            pubkeyData.exp = encodeSECItem(publicKey.contents.rsa.publicExponent);
+        }
         return postMessage({ rv: 0,
-                             pubkey: { modulus: encodeSECItem(publicKey.contents.rsa.modulus),
-                                       exponent: encodeSECItem(publicKey.contents.rsa.publicExponent) },
+                             pubkey: pubkeyData,
                              privateKey: encodeSECItem(privateKeyInfo.contents.encryptedData) });
     } finally {
         // clean up

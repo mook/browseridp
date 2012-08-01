@@ -100,6 +100,38 @@ const Options = {
             cleanup();
         }
     },
+    onJSON: function Options_onJSON(event) {
+        let setting = event.target;
+        while (setting && setting.localName != "setting") {
+            setting = setting.parentNode;
+        }
+        if (!setting) return;
+        let doc = setting.ownerDocument;
+        let host = setting.getAttribute("data-host");
+        if (!host) return;
+        let logins = Services.logins.findLogins({}, "x-browseridp:",
+                                                null, host);
+        if (logins.length < 1) return;
+        let login = logins[0];
+        let pubkey = JSON.parse(login.username);
+        let params = {
+            "public-key": pubkey,
+            "authentication": "chrome://browseridp/content/sign_in.html",
+            "provisioning": "chrome:///browserido/content/provision.html",
+        };
+        for (let [k, v] in Iterator({
+            "version": "2012.08.15",
+            // the mozilla browserid impl appears to use standard base64,
+            // not base64url...
+            "modulus": (pubkey.mod || "").replace(/-/g, "+").replace(/_/g, "/"),
+            "exponent": (pubkey.exp || "").replace(/-/g, "+").replace(/_/g, "/"),
+        })) {
+            params["public-key"][k] = v;
+        }
+        Cc["@mozilla.org/widget/clipboardhelper;1"]
+          .getService(Ci.nsIClipboardHelper)
+          .copyString(JSON.stringify(params), event.target.ownerDocument);
+    },
     onDelete: function Options_onDelete(event) {
         let setting = event.target;
         while (setting && setting.localName != "setting") {
@@ -129,11 +161,19 @@ const Options = {
             setting.setAttribute("title", login.httpRealm);
             setting.setAttribute("type", "control");
             doc.getElementById("detail-rows").appendChild(setting);
+            let cmdJSON = doc.createElement("button");
+            cmdJSON.setAttribute("data-id", "cmdJSON");
+            cmdJSON.setAttribute("label", getString(doc, "json-label"));
+            cmdJSON.setAttribute("tooltiptext", getString(doc, "json-tooltiptext"));
+            setting.appendChild(cmdJSON);
+            cmdJSON.addEventListener("command", Options.onJSON, false);
             let cmdExport = doc.createElement("button");
+            cmdExport.setAttribute("data-id", "cmdExport");
             cmdExport.setAttribute("label", getString(doc, "export-label"));
             cmdExport.setAttribute("tooltiptext", getString(doc, "export-tooltiptext"));
             setting.appendChild(cmdExport);
             let cmdDelete = doc.createElement("button");
+            cmdDelete.setAttribute("data-id", "cmdDelete");
             cmdDelete.setAttribute("label", getString(doc, "delete-label"));
             cmdDelete.setAttribute("tooltiptext", getString(doc, "delete-tooltiptext"));
             setting.appendChild(cmdDelete);
@@ -145,7 +185,12 @@ const Options = {
     onAddonOptionsHidden: function Options_onAddonOptionsHidden(doc) {
         let settings = doc.querySelectorAll("#detail-rows > setting[data-host]");
         for each (let setting in Array.slice(settings)) {
-            setting.removeEventListener("command", Options.onDelete);
+            for (let [id, handler] in Iterator({
+                "cmdJSON": Options.onJSON,
+                "cmdDelete": Options.onDelete,
+            })) {
+                setting.querySelector("[data-id='" + id + "']").removeEventListener("command", handler);
+            }
             setting.parentNode.removeChild(setting);
         }
         doc.querySelector("#detail-rows > setting[data-id='setting-global'] > button[data-id='cmdGenerate']")

@@ -19,6 +19,8 @@
                 tooltiptext="&cmd.import.tooltiptext;"/>
     </setting>
     <setting type="control" data-id="template" collapsed="true"
+             data-json-label="&cmd.json.label;"
+             data-json-tooltiptext="&cmd.json.tooltiptext;"
              data-export-label="&cmd.export.label;"
              data-export-tooltiptext="&cmd.export.tooltiptext;"
              data-delete-label="&cmd.delete.label;"

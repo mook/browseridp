@@ -8,6 +8,8 @@
 <!ENTITY cmd.generate.prompt.text "Please enter the domain this Persona IdP will be for">
 <!ENTITY cmd.import.label "Import">
 <!ENTITY cmd.import.tooltiptext "Import an existing key pair">
+<!ENTITY cmd.json.label "Copy JSON">
+<!ENTITY cmd.json.tooltiptext "Copy the JSON data needed on the server to clipboard">
 <!ENTITY cmd.export.label "Export">
 <!ENTITY cmd.export.tooltiptext "Export this key pair">
 <!ENTITY cmd.delete.label "Delete">
