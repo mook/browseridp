@@ -84,6 +84,17 @@ const SECKEYPrivateKey = ctypes.StructType("SECKEYPrivateKey", [
     { staticflags: ctypes.uint32_t },
     ]);
 
+const SECAlgorithmID = ctypes.StructType("SECAlgorithmID", [
+    { algorithm: SECItem },
+    { parameters: SECItem },
+    ]);
+
+const SECKEYEncryptedPrivateKeyInfo = ctypes.StructType("SECKEYEncryptedPrivateKeyInfo", [
+    { arena: ctypes.voidptr_t /* PLArenaPool * */},
+    { algorithm: SECAlgorithmID },
+    { encryptedData: SECItem },
+    ]);
+
 /**
  * Encode a SECItem
  */
@@ -91,7 +102,9 @@ function encodeSECItem(item) {
     var s = "";
     var array = ctypes.cast(item.data,
                             ctypes.uint8_t.array(item.length).ptr).contents;
-    return btoa(String.fromCharCode.apply(null, array));
+    return btoa(String.fromCharCode.apply(null, array))
+           .replace(/\+/g, "-")
+           .replace(/\//g, "_");
 }
 
 /**
@@ -136,6 +149,20 @@ function generate(params) {
                                                     ctypes.winapi_abi,
                                                     ctypes.void_t,
                                                     SECKEYPrivateKey.ptr);
+        var PK11_ExportEncryptedPrivKeyInfo = nss3.declare("PK11_ExportEncryptedPrivKeyInfo",
+                                                           ctypes.winapi_abi,
+                                                           SECKEYEncryptedPrivateKeyInfo.ptr,
+                                                           PK11SlotInfo.ptr,
+                                                           ctypes.int, /* SECOidTag */
+                                                           SECItem.ptr,
+                                                           SECKEYPrivateKey.ptr,
+                                                           ctypes.int,
+                                                           ctypes.voidptr_t);
+        var SECKEY_DestroyEncryptedPrivateKeyInfo = nss3.declare("SECKEY_DestroyEncryptedPrivateKeyInfo",
+                                                                 ctypes.winapi_abi,
+                                                                 ctypes.void_t,
+                                                                 SECKEYEncryptedPrivateKeyInfo.ptr,
+                                                                 ctypes.bool);
 
         var slot = PK11_GetInternalSlot();
         if (!slot) {
@@ -163,27 +190,40 @@ function generate(params) {
                                               true,
                                               null);
         if (privateKey.isNull()) {
+            let rv = PR_GetError();
             let buffer = ctypes.char.array(PR_GetErrorTextLength() + 1)();
             PR_GetErrorText(buffer);
-            throw {rv: PR_GetError(),
+            throw {rv: rv,
                    message: "No private key generated"};
         }
         if (publicKey.isNull()) {
             SECKEY_DestroyPrivateKey(privateKey);
-            privateKey = SECKEYPrivateKey.ptr();
+            privateKey = null;
             throw {rv: -1,
                    message: "PK11_GnerateKeyPair returned private key without public key"};
         }
 
-        let rsa = publicKey.contents.rsa;
+        var password = new SECItem(0, null, 0);
+        var privateKeyInfo = PK11_ExportEncryptedPrivKeyInfo(slot,
+                                                             /* SEC_OID_AES_256_CBC */ 188,
+                                                             password.address(),
+                                                             privateKey,
+                                                             1,
+                                                             null);
+        if (privateKeyInfo.isNull()) {
+            throw { rv: PR_GetError() || -1,
+                    message: "Failed to export private key" };
+        }
 
         return postMessage({ rv: 0,
-                             pubkey: { modulus: encodeSECItem(rsa.modulus),
-                                       exponent: encodeSECItem(rsa.publicExponent) },
-                             privateKey: 0});
+                             pubkey: { modulus: encodeSECItem(publicKey.contents.rsa.modulus),
+                                       exponent: encodeSECItem(publicKey.contents.rsa.publicExponent) },
+                             privateKey: encodeSECItem(privateKeyInfo.contents.encryptedData) });
     } finally {
-        if (!publicKey.isNull()) SECKEY_DestroyPublicKey(publicKey);
-        if (!privateKey.isNull()) SECKEY_DestroyPrivateKey(privateKey);
+        // clean up
+        if (privateKeyInfo && !privateKeyInfo.isNull()) SECKEY_DestroyEncryptedPrivateKeyInfo(privateKeyInfo, true);
+        if (publicKey && !publicKey.isNull()) SECKEY_DestroyPublicKey(publicKey);
+        if (privateKey && !privateKey.isNull()) SECKEY_DestroyPrivateKey(privateKey);
         if (slot) PK11_FreeSlot(slot);
         if (nss3) nss3.close();
         if (nspr4) nspr4.close();

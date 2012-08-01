@@ -30,7 +30,7 @@ const Options = {
         let worker = ChromeWorker("chrome://browseridp/content/crypto.js?" + Date.now());
         worker.onmessage = function(event) {
             if (("rv" in event.data) && event.data.rv) {
-                Cu.reportError(event.data.message);
+                Cu.reportError(event.data.rv + ": " + String(event.data.message));
                 return;
             }
             Cu.reportError("result: " + JSON.stringify(event.data));
