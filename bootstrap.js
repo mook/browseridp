@@ -3,10 +3,13 @@ const { utils: Cu } = Components;
 function startup(data, reason) {
     load("chrome://browseridp/content/options.js");
     Options.startup(data);
+    load("chrome://browseridp/content/interceptor.js");
+    Interceptor.startup(data);
 }
 
 function shutdown(data, reason) {
-    Options.shutdown();
+    Options.shutdown(data);
+    Interceptor.shutdown(data);
     // unload imported scripts
     if ("_urls" in load) {
         Object.keys(load._urls).forEach(function(key) {
