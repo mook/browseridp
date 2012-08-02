@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+    <title>BrowserIdP Provision</title>
+    <script>
+        const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+        Cu.import("resource://gre/modules/Services.jsm");
+
+        function base64(str)
+            btoa(unescape(encodeURIComponent(str))).replace(/\+/g, "-").replace(/\//g, "_");
+
+        navigator.id.beginProvisioning(function(email, cert_duration) {
+            let host = email.replace(/^.*@/, "");
+            let logins = Services.logins.findLogins({}, "x-browseridp:",
+                                                    null, host);
+            if (!logins.length) {
+                // host not available
+                navigator.id.raiseProvisioningFailure("BrowserIdP cannot provision for host " + host);
+                return;
+            }
+            cert_duration = Math.max(cert_duration, 60 * 10); // at most 10 minutes
+            cert_duration = Math.min(cert_duration, 60 * 1); // at least 1 minute
+            let cert_expiry = (Date.now() / 1000) >> 0 + cert_duration;
+            let login = logins[0];
+            navigator.id.genKeyPair(function(pubkey) {
+                
+                let payload = {
+                    version: "2012.08.15",
+                    publicKey: JSON.parse(login.username),
+                    principal: pubkey.prinicipal,
+                }
+                /*
+                let header = {"typ": "JWT", "alg": "RS256"};
+                let payload = {"iss": host,
+                               "exp": cert_expiry,
+                               "publickey": JSON.parse(login.username),
+                               "principal": {
+                                    "email": email
+                               }
+                              };
+                let data = base64(JSON.stringify(header) + "." + JSON.stringify(payload));
+                let certificate = data + "." + signature;
+                */
+                navigator.id.registerCertificate(certificate);
+            });
+        });
+    </script>
+</head>
+</html>

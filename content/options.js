@@ -116,13 +116,17 @@ const Options = {
         let pubkey = JSON.parse(login.username);
         let params = {
             "public-key": pubkey,
-            "authentication": "chrome://browseridp/content/sign_in.html",
-            "provisioning": "chrome:///browserido/content/provision.html",
+            // XXX Mook: The URLs here are a hack to let the extension know it
+            // should intercept the load
+            "authentication": "//chrome://browseridp/content/sign_in.html",
+            "provisioning": "//chrome:///browseridp/content/provision.html",
         };
         for (let [k, v] in Iterator({
             "version": "2012.08.15",
-            // the mozilla browserid impl appears to use standard base64,
-            // not base64url...
+            // github.com/mozilla/browserid:dev seems to be expecting
+            // standard bas64, instead of base64url, here.  If we don't do this
+            // stupid replace, it just skips - and _ characters, making us have
+            // invalid exponents and everything dies.
             "modulus": (pubkey.mod || "").replace(/-/g, "+").replace(/_/g, "/"),
             "exponent": (pubkey.exp || "").replace(/-/g, "+").replace(/_/g, "/"),
         })) {
