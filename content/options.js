@@ -119,7 +119,7 @@ const Options = {
             // XXX Mook: The URLs here are a hack to let the extension know it
             // should intercept the load
             "authentication": "//chrome://browseridp/content/sign_in.html",
-            "provisioning": "//chrome:///browseridp/content/provision.html",
+            "provisioning": "//chrome://browseridp/content/provision.html",
         };
         for (let [k, v] in Iterator({
             "version": "2012.08.15",
