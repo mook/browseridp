@@ -3,7 +3,7 @@
  * and redirecting it to the extension-provided URLS
  */
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 const EXPORTED_SYMBOLS = ["Interceptor"];
@@ -41,7 +41,26 @@ const Interceptor = {
         }
         // At this point, we know this to be a browserid login we want
         try {
-            subject.redirectTo(subject.URI.path.substr(2));
+            let url = subject.URI.path.substr(2) + "?host=" + subject.URI.host;
+            if ("redirectTo" in subject) {
+                // requires bug 765934 to land
+                subject.redirectTo(Services.io.newURI(url, null, null));
+            } else {
+                let webnav = subject.QueryInterface(Ci.nsIChannel)
+                                    .notificationCallbacks
+                                    .getInterface(Ci.nsILoadContext)
+                                    .associatedWindow
+                                    .QueryInterface(Ci.nsIInterfaceRequestor)
+                                    .getInterface(Ci.nsIWebNavigation);
+                subject.cancel(Cr.NS_ERROR_BINDING_ABORTED);
+                Services.tm.currentThread.dispatch(function() {
+                    webnav.loadURI(url,
+                                   Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY,
+                                   null, // referrer
+                                   null,
+                                   null);
+                }, 0);
+            }
         } catch (ex) {
             Cu.reportError(ex);
         }

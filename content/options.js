@@ -67,12 +67,17 @@ const Options = {
         try {
             var worker = ChromeWorker("chrome://browseridp/content/crypto.js?" + Date.now());
             worker.onmessage = function(event) {
+                if ("log" in event.data) {
+                    Cu.reportError(event.data.log);
+                    return;
+                }
                 try {
                     if (("rv" in event.data) && event.data.rv) {
                         Cu.reportError(event.data.rv + ": " + String(event.data.message));
                         return;
                     }
                     result = event.data;
+                    Cu.reportError("got key: " + JSON.stringify(result));
                     if (host !== undefined) {
                         if (host) {
                             accept();
@@ -118,8 +123,8 @@ const Options = {
             "public-key": pubkey,
             // XXX Mook: The URLs here are a hack to let the extension know it
             // should intercept the load
-            "authentication": "//chrome://browseridp/content/sign_in.html",
-            "provisioning": "//chrome://browseridp/content/provision.html",
+            "authentication": "chrome://browseridp/content/sign_in.html",
+            "provisioning": "chrome://browseridp/content/provision.html",
         };
         for (let [k, v] in Iterator({
             "version": "2012.08.15",

@@ -3,46 +3,82 @@
 <html>
 <head>
     <title>BrowserIdP Provision</title>
-    <script>
+    <!-- We're shipping a local copy of https://login.persona.org/provisioning_api.js
+       - because loading scripts into a chrome window from the web is just a bad idea
+      -->
+    <script type="text/javascript;version=1.8">
         const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
         Cu.import("resource://gre/modules/Services.jsm");
 
         function base64(str)
             btoa(unescape(encodeURIComponent(str))).replace(/\+/g, "-").replace(/\//g, "_");
 
-        navigator.id.beginProvisioning(function(email, cert_duration) {
-            let host = email.replace(/^.*@/, "");
-            let logins = Services.logins.findLogins({}, "x-browseridp:",
-                                                    null, host);
-            if (!logins.length) {
-                // host not available
-                navigator.id.raiseProvisioningFailure("BrowserIdP cannot provision for host " + host);
-                return;
-            }
-            cert_duration = Math.max(cert_duration, 60 * 10); // at most 10 minutes
-            cert_duration = Math.min(cert_duration, 60 * 1); // at least 1 minute
-            let cert_expiry = (Date.now() / 1000) >> 0 + cert_duration;
-            let login = logins[0];
-            navigator.id.genKeyPair(function(pubkey) {
-                
-                let payload = {
-                    version: "2012.08.15",
-                    publicKey: JSON.parse(login.username),
-                    principal: pubkey.prinicipal,
+        addEventListener("load", function() {
+            Cu.reportError("navigator.id: " + navigator.id);
+            
+            navigator.id.beginProvisioning(function(email, cert_duration) {
+                Cu.reportError("beginProvisioning: "+ email + " / " + cert_duration);
+                let host = email.replace(/^.*@/, "");
+                let logins = Services.logins.findLogins({}, "x-browseridp:",
+                                                        null, host);
+                if (!logins.length) {
+                    // host not available
+                    navigator.id.raiseProvisioningFailure("BrowserIdP cannot provision for host " + host);
+                    return;
                 }
-                /*
-                let header = {"typ": "JWT", "alg": "RS256"};
-                let payload = {"iss": host,
-                               "exp": cert_expiry,
-                               "publickey": JSON.parse(login.username),
-                               "principal": {
-                                    "email": email
-                               }
-                              };
-                let data = base64(JSON.stringify(header) + "." + JSON.stringify(payload));
-                let certificate = data + "." + signature;
-                */
-                navigator.id.registerCertificate(certificate);
+                cert_duration = Math.max(cert_duration, 60 * 10); // at most 10 minutes
+                cert_duration = Math.min(cert_duration, 60 * 1); // at least 1 minute
+                let cert_expiry = (Date.now() / 1000) >> 0 + cert_duration;
+                let login = logins[0];
+                navigator.id.genKeyPair(function(pubkey) {
+                    
+                    //let payload = {
+                    //    version: "2012.08.15",
+                    //    publicKey: JSON.parse(login.username),
+                    //    principal: pubkey.prinicipal,
+                    //}
+                    Cu.reportError("genKeypair got pubkey: " + JSON.stringify(pubkey));
+                    let header = {"typ": "JWT", "alg": "RS256"};
+                    let payload = {"iss": host,
+                                   "exp": cert_expiry,
+                                   "public-key": pubkey,
+                                   "principal": {
+                                        "email": email
+                                   }
+                                  };
+                    let data = base64(JSON.stringify(header)) + "." +
+                               base64(JSON.stringify(payload));
+
+                    var worker = ChromeWorker("chrome://browseridp/content/crypto.js?" + Date.now());
+                    worker.onmessage = function(event) {
+                        try {
+                            if ("log" in event.data) {
+                                Cu.reportError(String(event.data.log));
+                                return;
+                            }
+                            if (("rv" in event.data) && event.data.rv) {
+                                Cu.reportError(event.data.rv + ": " + String(event.data.message));
+                                navigator.id.raiseProvisioningFailure("Failed to provision: rv=" + event.data.rv +
+                                                                      ", message: " + String(event.data.message));
+                                return;
+                            }
+                            result = event.data.signature;
+                            Cu.reportError('got cert: ' + JSON.stringify(event.data));
+                            navigator.id.registerCertificate((data + "." + result).replace(/=/g, ""));
+                        } catch (ex) {
+                            navigator.id.raiseProvisioningFailure("Failed to provision: exception " + String(ex));
+                            Cu.reportError(ex);
+                        }
+                    }
+                    worker.postMessage({command: "sign",
+                                        data: data,
+                                        pubkey: JSON.parse(login.username),
+                                        privkey: JSON.parse(login.password),
+                                       });
+
+                    //let certificate = data + "." + signature;
+                    //navigator.id.registerCertificate(certificate);
+                });
             });
         });
     </script>
