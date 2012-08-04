@@ -19,6 +19,9 @@
                 tooltiptext="&cmd.import.tooltiptext;"/>
     </setting>
     <setting type="control" data-id="template" collapsed="true"
+             data-import-picker-title="&cmd.import.picker.title;"
+             data-import-pass-title="&cmd.import.pass.title;"
+             data-import-pass-text="&cmd.import.pass.text;"
              data-json-label="&cmd.json.label;"
              data-json-tooltiptext="&cmd.json.tooltiptext;"
              data-export-label="&cmd.export.label;"

@@ -168,7 +168,8 @@ const Options = {
             }
             try {
                 if (("rv" in event.data) && event.data.rv) {
-                    error(event.data.rv + ": " + String(event.data.message));
+                    Cu.reportError(event.data.rv + ": " + String(event.data.message));
+                    error(String(event.data.message));
                     return;
                 }
 
@@ -303,6 +304,7 @@ const Options = {
             try {
                 if (("rv" in event.data) && event.data.rv) {
                     Cu.reportError(event.data.rv + ": " + String(event.data.message));
+                    error(String(event.data.message));
                     return;
                 }
                 data.privkey = event.data.result;

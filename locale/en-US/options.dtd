@@ -8,6 +8,9 @@
 <!ENTITY cmd.generate.prompt.text "Please enter the domain this Persona IdP will be for">
 <!ENTITY cmd.import.label "Import">
 <!ENTITY cmd.import.tooltiptext "Import an existing key pair">
+<!ENTITY cmd.import.picker.title "Import &#x2014; BrowserIdP">
+<!ENTITY cmd.import.pass.title "Import password &#x2014; BrowserIdP">
+<!ENTITY cmd.import.pass.text "Please enter the import password for {0}">
 <!ENTITY cmd.json.label "Copy JSON">
 <!ENTITY cmd.json.tooltiptext "Copy the JSON data needed on the server to clipboard">
 <!ENTITY cmd.export.label "Export">
