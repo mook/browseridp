@@ -160,6 +160,93 @@ function decodeSECItem(base64urldata) {
 }
 
 /**
+ * Encrypt a private key with the given password
+ * @param privateKey {SECKEYPrivateKey.ptr} The private key to encrypt
+ * @param password {String} The password to encrypt with
+ * @param [optional] nss3 {ctypes.Library} NSS library pointer
+ * @param [optional] nspr4 {ctypes.Library} NSPR library pointer
+ * @param [optional] slot {PK11SlotInfo.ptr} slot
+ * @returns SECKEYEncryptedPrivateKeyInfo.ptr The encrypted private key
+ * @note The result should be freed with SECKEY_DestroyEncryptedPrivateKeyInfo
+ */
+function encryptPrivateKey(privateKey, password="", nss3=null, nspr4=null, slot=null) {
+    var free = {};
+    try {
+        // Make sure we have the libraries we need
+        if (!nspr4) {
+            nspr4 = ctypes.open(ctypes.libraryName("nspr4"));
+            free.nspr4 = true;
+        }
+        if (!nss3) {
+            nss3 = ctypes.open(ctypes.libraryName("nss3"));
+            free.nss3 = true;
+        }
+
+        // Declare the functions used
+        var PR_GetError =
+            nspr4.declare("PR_GetError",
+                          ABI,
+                          ctypes.int32_t);
+        var PK11_GetInternalSlot =
+            nss3.declare("PK11_GetInternalSlot",
+                         ABI,
+                         PK11SlotInfo.ptr);
+        var PK11_FreeSlot =
+            nss3.declare("PK11_FreeSlot",
+                         ABI,
+                         ctypes.void_t,
+                         PK11SlotInfo.ptr);
+        var PK11_ExportEncryptedPrivKeyInfo =
+            nss3.declare("PK11_ExportEncryptedPrivKeyInfo",
+                         ABI,
+                         SECKEYEncryptedPrivateKeyInfo.ptr,
+                         PK11SlotInfo.ptr, // slot
+                         SECOidTag, // algTag
+                         SECItem.ptr, // pwItem
+                         SECKEYPrivateKey.ptr, // pk
+                         ctypes.int, // iteration
+                         ctypes.voidptr_t); // wincx
+
+        if (!slot) {
+            slot = PK11_GetInternalSlot();
+            if (!slot) {
+                throw { rv: PR_GetError() || -1,
+                        message: "Failed to get internal slot" };
+            }
+            free.slot = true;
+        }
+
+        password = unescape(encodeURIComponent(password)); // cast UTF8 -> bytes
+        let passwordItem = new SECItem();
+        passwordItem.type = SECItemType.siBuffer;
+        passwordItem._buffer = ctypes.uint8_t.array(password.length)
+                                    ([password.charCodeAt(i) for (i in range(password.length))]);
+        passwordItem.data = ctypes.cast(passwordItem._buffer.address(),
+                                        ctypes.uint8_t.ptr);
+        passwordItem.length = passwordItem._buffer.length;
+        var privateKeyInfo = PK11_ExportEncryptedPrivKeyInfo(slot,
+                                                             SEC_OID_AES_256_CBC,
+                                                             passwordItem.address(),
+                                                             privateKey,
+                                                             1,
+                                                             null);
+        if (!privateKeyInfo)
+            throw { rv: PR_GetError() || -1,
+                    message: "Failed to encrypt private key" };
+
+        return privateKeyInfo;
+
+    } finally {
+        if (("slot" in free) && slot)
+            PK11_FreeSlot(slot);
+        if (("nss3" in free) && nss3)
+            nss3.close();
+        if (("nspr4" in free) && nspr4)
+            nspr4.close();
+    }
+}
+
+/**
  * Generate a key pair
  */
 function generate(params) {
@@ -200,16 +287,6 @@ function generate(params) {
                          ABI,
                          ctypes.void_t,
                          SECKEYPrivateKey.ptr);
-        var PK11_ExportEncryptedPrivKeyInfo =
-            nss3.declare("PK11_ExportEncryptedPrivKeyInfo",
-                         ABI,
-                         SECKEYEncryptedPrivateKeyInfo.ptr,
-                         PK11SlotInfo.ptr, // slot
-                         SECOidTag, // algTag
-                         SECItem.ptr, // pwItem
-                         SECKEYPrivateKey.ptr, // pk
-                         ctypes.int, // iteration
-                         ctypes.voidptr_t); // wincx
         var SECKEY_DestroyEncryptedPrivateKeyInfo =
             nss3.declare("SECKEY_DestroyEncryptedPrivateKeyInfo",
                          ABI,
@@ -254,13 +331,7 @@ function generate(params) {
 
         // Export the private key so we can save it.
         // TODO: figure out how we can leave it on the slot and ask for it later
-        let password = new SECItem(0, null, 0);
-        var privateKeyInfo = PK11_ExportEncryptedPrivKeyInfo(slot,
-                                                             SEC_OID_AES_256_CBC,
-                                                             password.address(),
-                                                             privateKey,
-                                                             1,
-                                                             null);
+        var privateKeyInfo = encryptPrivateKey(privateKey, "", nss3, nspr4, slot);
         let pubkeyData = { alg: params.alg };
         if (/^RS/.test(params.alg)) {
             pubkeyData.algorithm = "RS";
