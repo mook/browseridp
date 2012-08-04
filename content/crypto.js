@@ -388,7 +388,7 @@ function decryptPrivateKey(publicKey, encryptedPrivateKey,
             throw { rv: PR_GetError() || -1,
                     message: "Failed to import private key" };
         }
-        
+
         return privkey;
 
     } finally {
@@ -585,7 +585,7 @@ function sign(params) {
                     message: "Failed to sign data" };
         }
         postMessage({rv: 0, signature: encodeSECItem(signedData)});
-        
+
     } finally {
         // clean up
         if (privkey)
@@ -605,9 +605,11 @@ function encrypt(params) {
                          ABI,
                          ctypes.void_t,
                          SECKEYPrivateKey.ptr);
-        var privkey = decryptPrivateKey(params.publicKey, params.privateKey);
+        var privkey = decryptPrivateKey(params.publicKey, params.privateKey,
+                                        params.decryptPassword);
         postMessage({ rv: 0,
-                      result: encryptPrivateKey(privkey, params.password) });
+                      result: encryptPrivateKey(privkey,
+                                                params.encryptPassword) });
     } catch (ex) {
         postMessage({log: String(ex)});
         throw(ex);

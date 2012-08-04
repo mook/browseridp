@@ -2,6 +2,8 @@ const EXPORTED_SYMBOLS = ["Options"];
 
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
+Cu.import("resource://gre/modules/FileUtils.jsm");
+Cu.import("resource://gre/modules/NetUtil.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -23,6 +25,12 @@ function debug(msg, ...rest) {
     Services.console.logStringMessage("BrowserIdP: " +
                                       String(msg) +
                                       rest.join(", "));
+}
+
+function error(msg, ...rest) {
+    Components.utils.reportError("BrowserIdP: " +
+                                 String(msg) +
+                                 rest.join(", "));
 }
 
 const Options = {
@@ -125,7 +133,112 @@ const Options = {
         }
     },
     onImport: function Options_onImport(event) {
-        
+        let doc = event.target.ownerDocument;
+        let dirSvcKey;
+        let picker = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+        picker.init(doc.defaultView,
+                    getString(doc, "import-picker-title"),
+                    Ci.nsIFilePicker.modeOpen);
+        picker.appendFilter(getString(doc, "picker-filter"), "*.browseridp");
+        picker.defaultExtension = "browseridp";
+        switch (Services.appinfo.OS) {
+            case "Darwin": dirSvcKey = "Docs"; break;
+            case "WINNT": dirSvcKey = "Pers"; break;
+            default: dirSvcKey = "XDGDocs"; break;
+        }
+        try {
+            picker.displayDirectory = Services.dirsvc.get(dirSvcKey, Ci.nsIFile);
+        } catch (ex) {
+            // ignore failure to find a useful docs directory
+        }
+        if (picker.show() == Ci.nsIFilePicker.returnCancel) {
+            return;
+        }
+        if (!picker.file || !picker.file.exists()) {
+            error("Import: Unexpected got missing file");
+            return; // huh?
+        }
+
+        let data;
+        let worker = ChromeWorker("chrome://browseridp/content/crypto.js?" + Date.now());
+        worker.onmessage = function(event) {
+            if ("log" in event.data) {
+                debug(event.data.log);
+                return;
+            }
+            try {
+                if (("rv" in event.data) && event.data.rv) {
+                    error(event.data.rv + ": " + String(event.data.message));
+                    return;
+                }
+
+                data.privkey = event.data.result;
+                let oldLogins = Services.logins.findLogins({}, "x-browseridp:",
+                                                           null, data.host);
+                if (oldLogins.length) {
+                    var bag = Cc["@mozilla.org/hash-property-bag;1"]
+                                .createInstance(Ci.nsIWritablePropertyBag2);
+                    bag.setPropertyAsAString("username", JSON.stringify(data.pubkey));
+                    bag.setPropertyAsAString("password", JSON.stringify(data.privkey));
+                    Services.logins.modifyLogin(oldLogins[0], bag);
+                } else {
+                    let login = Cc["@mozilla.org/login-manager/loginInfo;1"]
+                                  .createInstance(Ci.nsILoginInfo);
+                    login.init("x-browseridp:",
+                               null, data.host,
+                               JSON.stringify(data.pubkey),
+                               JSON.stringify(data.privkey),
+                               "", "");
+                    Services.logins.addLogin(login);
+                }
+                // redraw the whole page to show the new domain
+                Options.refresh(doc);
+            } catch (ex) {
+                Cu.reportError(ex);
+            }
+        }
+
+        let channel = NetUtil.newChannel(picker.file);
+        channel.contentType = "application/json";
+        NetUtil.asyncFetch(channel, function(stream, status) {
+            if (!Components.isSuccessCode(status)) {
+                let name = [x for (x in Components.results)
+                                if (Components.results[x] == status)];
+                name.push(status.toString(16)); // in case of not found
+                error("Import: reading " + picker.file.path + " failed with " +
+                      name[0]);
+                return;
+            }
+            let bytes = NetUtil.readInputStreamToString(stream, stream.available());
+            try {
+                data = JSON.parse(bytes);
+            } catch (ex) {
+                error("Failed to parse " + picker.file.path + ": ",
+                      ex);
+                return;
+            }
+            debug("Got input: ", JSON.stringify(data));
+            for (let key of ["host", "pubkey", "privkey"]) {
+                if (!(key in data) || !data[key]) {
+                    error("Imported data has no " + key);
+                    return;
+                }
+            }
+            let password = {value: null};
+            var rv = Services.prompt.promptPassword(doc.defaultView,
+                                                    getString(doc, "import-pass-title"),
+                                                    getString(doc, "import-pass-text", data.host),
+                                                    password, null, {value: false});
+            if (!rv) return;
+
+            worker.postMessage({command: "encrypt",
+                                publicKey: data.pubkey,
+                                privateKey: data.privkey,
+                                decryptPassword: password.value,
+                                encryptPassword: ""});
+
+        });
+
     },
     _getLoginFromEvent: function Options__getLoginFromEvent(event) {
         let setting = event.target;
@@ -204,22 +317,23 @@ const Options = {
         worker.postMessage({command: "encrypt",
                             publicKey: JSON.parse(login.username),
                             privateKey: JSON.parse(login.password),
-                            password: password.value});
+                            decryptPassword: "",
+                            encryptPassword: password.value});
 
         function accept() {
             if (!data) return;
-            let stream = Cc["@mozilla.org/network/file-output-stream;1"]
-                           .createInstance(Ci.nsIFileOutputStream);
-            stream.init(file, -1, -1, 0);
-            let string = JSON.stringify(data);
-            stream.write(string, string.length);
-            stream.close();
+            let outstream = FileUtils.openSafeFileOutputStream(file);
+            let conv = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+                         .createInstance(Ci.nsIScriptableUnicodeConverter);
+            conv.charset = "UTF-8";
+            let instream = conv.convertToInputStream(JSON.stringify(data));
+            NetUtil.asyncCopy(instream, outstream);
             data = null;
         }
 
         let dirSvcKey;
         let picker = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
-        picker.init(event.target.ownerDocument.defaultView,
+        picker.init(doc.defaultView,
                     getString(doc, "export-picker-title", data.host),
                     Ci.nsIFilePicker.modeSave);
         picker.appendFilter(getString(doc, "picker-filter"), "*.browseridp");
