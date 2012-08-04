@@ -61,6 +61,7 @@ const Options = {
         }
         var host = undefined, result = null;
         function accept() {
+            result.pubkey.kid = ["browseridp", Options.addonData.version, Date.now()].join(":");
             let oldLogins = Services.logins.findLogins({}, "x-browseridp:",
                                                        null, host);
             if (oldLogins.length) {
