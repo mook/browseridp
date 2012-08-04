@@ -23,8 +23,12 @@
              data-json-tooltiptext="&cmd.json.tooltiptext;"
              data-export-label="&cmd.export.label;"
              data-export-tooltiptext="&cmd.export.tooltiptext;"
+             data-export-pass-title="&cmd.export.pass.title;"
+             data-export-pass-text="&cmd.export.pass.text;"
+             data-export-picker-title="&cmd.export.picker.title;"
              data-delete-label="&cmd.delete.label;"
              data-delete-tooltiptext="&cmd.delete.tooltiptext;"
              data-generate-prompt-title="&cmd.generate.prompt.title;"
-             data-generate-prompt-text="&cmd.generate.prompt.text;"/>
+             data-generate-prompt-text="&cmd.generate.prompt.text;"
+             data-picker-filter="&picker.filter;"/>
 </vbox>

@@ -597,6 +597,29 @@ function sign(params) {
     }
 }
 
+function encrypt(params) {
+    try {
+        var nss3 = ctypes.open(ctypes.libraryName("nss3"));
+        var SECKEY_DestroyPrivateKey =
+            nss3.declare("SECKEY_DestroyPrivateKey",
+                         ABI,
+                         ctypes.void_t,
+                         SECKEYPrivateKey.ptr);
+        var privkey = decryptPrivateKey(params.publicKey, params.privateKey);
+        postMessage({ rv: 0,
+                      result: encryptPrivateKey(privkey, params.password) });
+    } catch (ex) {
+        postMessage({log: String(ex)});
+        throw(ex);
+    } finally {
+        // clean up
+        if (privkey)
+            SECKEY_DestroyPrivateKey(privkey);
+        if (nss3)
+            nss3.close();
+    }
+}
+
 self.onmessage = function cryptoWorker_onMessage(event) {
     let command = ("command" in event.data) ? event.data.command : String(event.data);
     try {
@@ -605,6 +628,8 @@ self.onmessage = function cryptoWorker_onMessage(event) {
                 return generate(event.data);
             case "sign":
                 return sign(event.data);
+            case "encrypt":
+                return encrypt(event.data);
             default:
                 postMessage({rv: -1,
                              message: "Unknown command " + command});

@@ -12,5 +12,9 @@
 <!ENTITY cmd.json.tooltiptext "Copy the JSON data needed on the server to clipboard">
 <!ENTITY cmd.export.label "Export">
 <!ENTITY cmd.export.tooltiptext "Export this key pair">
+<!ENTITY cmd.export.pass.title "Export password &#x2014; BrowserIdP">
+<!ENTITY cmd.export.pass.text "Please create an export password for {0}">
+<!ENTITY cmd.export.picker.title "Export {0} &#x2014; BrowserIdP">
 <!ENTITY cmd.delete.label "Delete">
 <!ENTITY cmd.delete.tooltiptext "Delete this key pair">
+<!ENTITY picker.filter "BrowserIdP Files">

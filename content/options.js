@@ -5,9 +5,13 @@ const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-function getString(doc, key) {
+function getString(doc, key, ...replacements) {
     let template = doc.querySelector("#detail-rows > setting[data-id='template']");
-    return template.getAttribute("data-" + key);
+    let string = template.getAttribute("data-" + key) || key;
+    for each (let [index, replacement] in Iterator(replacements)) {
+        string = string.replace("{" + index + "}", replacement);
+    }
+    return string;
 }
 
 function debug(msg, ...rest) {
@@ -119,19 +123,26 @@ const Options = {
             cleanup();
         }
     },
-    onJSON: function Options_onJSON(event) {
+    onImport: function Options_onImport(event) {
+        
+    },
+    _getLoginFromEvent: function Options__getLoginFromEvent(event) {
         let setting = event.target;
         while (setting && setting.localName != "setting") {
             setting = setting.parentNode;
         }
-        if (!setting) return;
+        if (!setting) return null;
         let doc = setting.ownerDocument;
         let host = setting.getAttribute("data-host");
-        if (!host) return;
+        if (!host) return null;
         let logins = Services.logins.findLogins({}, "x-browseridp:",
                                                 null, host);
-        if (logins.length < 1) return;
-        let login = logins[0];
+        if (logins.length < 1) return null;
+        return logins[0];
+    },
+    onJSON: function Options_onJSON(event) {
+        let login = Options._getLoginFromEvent(event);
+        if (!login) return;
         let pubkey = JSON.parse(login.username);
         let params = {
             "public-key": pubkey,
@@ -153,6 +164,86 @@ const Options = {
           .getService(Ci.nsIClipboardHelper)
           .copyString(JSON.stringify(params), event.target.ownerDocument);
     },
+
+    onExport: function Options_onExport(event) {
+        let doc = event.target.ownerDocument;
+        let login = Options._getLoginFromEvent(event);
+        if (!login) return;
+        let password = {value: null};
+        var rv = Services.prompt.promptPassword(doc.defaultView,
+                                                getString(doc, "export-pass-title"),
+                                                getString(doc, "export-pass-text", login.httpRealm),
+                                                password, null, {value: false});
+        if (!rv) return;
+        let data = {
+            host: login.httpRealm,
+            pubkey: JSON.parse(login.username),
+        };
+        let file = null;
+        let worker = ChromeWorker("chrome://browseridp/content/crypto.js?" + Date.now());
+        worker.onmessage = function(event) {
+            if ("log" in event.data) {
+                debug(event.data.log);
+                return;
+            }
+            try {
+                if (("rv" in event.data) && event.data.rv) {
+                    Cu.reportError(event.data.rv + ": " + String(event.data.message));
+                    return;
+                }
+                data.privkey = event.data.result;
+                debug("got export data: " + JSON.stringify(data));
+                if (file) {
+                    accept();
+                }
+            } catch (ex) {
+                Cu.reportError(ex);
+            }
+        }
+        worker.postMessage({command: "encrypt",
+                            publicKey: JSON.parse(login.username),
+                            privateKey: JSON.parse(login.password),
+                            password: password.value});
+
+        function accept() {
+            if (!data) return;
+            let stream = Cc["@mozilla.org/network/file-output-stream;1"]
+                           .createInstance(Ci.nsIFileOutputStream);
+            stream.init(file, -1, -1, 0);
+            let string = JSON.stringify(data);
+            stream.write(string, string.length);
+            stream.close();
+            data = null;
+        }
+
+        let dirSvcKey;
+        let picker = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+        picker.init(event.target.ownerDocument.defaultView,
+                    getString(doc, "export-picker-title", data.host),
+                    Ci.nsIFilePicker.modeSave);
+        picker.appendFilter(getString(doc, "picker-filter"), "*.browseridp");
+        picker.defaultString = data.host + ".browseridp";
+        picker.defaultExtension = "browseridp";
+        switch (Services.appinfo.OS) {
+            case "Darwin": dirSvcKey = "Docs"; break;
+            case "WINNT": dirSvcKey = "Pers"; break;
+            default: dirSvcKey = "XDGDocs"; break;
+        }
+        try {
+            picker.displayDirectory = Services.dirsvc.get(dirSvcKey, Ci.nsIFile);
+        } catch (ex) {
+            // ignore failure to find a useful docs directory
+        }
+        if (picker.show() != Ci.nsIFilePicker.returnCancel) {
+            file = picker.file;
+            if (data.privkey) {
+                accept();
+            } else {
+                debug("Waiting for private key...");
+            }
+        }
+    },
+
     onDelete: function Options_onDelete(event) {
         let setting = event.target;
         while (setting && setting.localName != "setting") {
@@ -190,6 +281,7 @@ const Options = {
             cmdExport.setAttribute("label", getString(doc, "export-label"));
             cmdExport.setAttribute("tooltiptext", getString(doc, "export-tooltiptext"));
             setting.appendChild(cmdExport);
+            cmdExport.addEventListener("command", Options.onExport, false);
             let cmdDelete = doc.createElement("button");
             cmdDelete.setAttribute("data-id", "cmdDelete");
             cmdDelete.setAttribute("label", getString(doc, "delete-label"));
@@ -199,12 +291,15 @@ const Options = {
         }
         doc.querySelector("#detail-rows > setting[data-id='setting-global'] > button[data-id='cmdGenerate']")
            .addEventListener("command", this.onGenerate, false);
+        doc.querySelector("#detail-rows > setting[data-id='setting-global'] > button[data-id='cmdImport']")
+           .addEventListener("command", this.onImport, false);
     },
     onAddonOptionsHidden: function Options_onAddonOptionsHidden(doc) {
         let settings = doc.querySelectorAll("#detail-rows > setting[data-host]");
         for each (let setting in Array.slice(settings)) {
             for (let [id, handler] in Iterator({
                 "cmdJSON": Options.onJSON,
+                "cmdExport": Options.onExport,
                 "cmdDelete": Options.onDelete,
             })) {
                 setting.querySelector("[data-id='" + id + "']").removeEventListener("command", handler);
@@ -213,6 +308,8 @@ const Options = {
         }
         doc.querySelector("#detail-rows > setting[data-id='setting-global'] > button[data-id='cmdGenerate']")
            .removeEventListener("command", this.onGenerate);
+        doc.querySelector("#detail-rows > setting[data-id='setting-global'] > button[data-id='cmdImport']")
+           .removeEventListener("command", this.onImport);
     },
     QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver]),
 };
