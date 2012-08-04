@@ -164,12 +164,12 @@ function decodeSECItem(base64urldata) {
  */
 function generate(params) {
     try {
-        var nspr4 = ctypes.open("nspr4");
+        var nspr4 = ctypes.open(ctypes.libraryName("nspr4"));
         var PR_GetError =
             nspr4.declare("PR_GetError",
                           ABI,
                           ctypes.int32_t);
-        var nss3 = ctypes.open("nss3");
+        var nss3 = ctypes.open(ctypes.libraryName("nss3"));
         var PK11_GetInternalSlot =
             nss3.declare("PK11_GetInternalSlot",
                          ABI,
@@ -306,12 +306,12 @@ function generate(params) {
  */
 function sign(params) {
     try {
-        var nspr4 = ctypes.open("nspr4");
+        var nspr4 = ctypes.open(ctypes.libraryName("nspr4"));
         var PR_GetError =
             nspr4.declare("PR_GetError",
                           ABI,
                           ctypes.int32_t);
-        var nss3 = ctypes.open("nss3");
+        var nss3 = ctypes.open(ctypes.libraryName("nss3"));
         var PK11_GetInternalSlot =
             nss3.declare("PK11_GetInternalSlot",
                          ABI,
