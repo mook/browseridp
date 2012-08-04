@@ -7,10 +7,16 @@
  * utility functions
  */
 function range(max) { for (let i = 0; i < max; i++) yield i; }
+function debug(msg, ...rest) {
+    postMessage({log: String(msg) + rest.join(", ")});
+}
 
 /**
  * ctypes declarations
  */
+
+const ABI = /^Win\d+$/.test(navigator.platform) ?
+                ctypes.winapi_abi : ctypes.default_abi;
 
 const KeyType = {
     nullKey: 0,
@@ -45,6 +51,7 @@ const SECItemType = {
 
 // mechanisms; see pkcs11t.h
 const CK_MECHANISM_TYPE = ctypes.unsigned_long;
+const CKM_RSA_PKCS_KEY_PAIR_GEN = 0x00000000;
 const CKM_DES_KEY_GEN = 0x00000120;
 const CKM_DES3_ECB = 0x00000132;
 const CKM_DES3_CBC_PAD = 0x00000136;
@@ -60,6 +67,7 @@ const CKA_SIGN_RECOVER = 0x00000109;
 const CK_KEY_TYPE = ctypes.unsigned_long;
 
 // enum SECOidTag; see secoidt.h
+const SECOidTag = ctypes.int;
 const SEC_OID_AES_256_CBC = 188;
 const SEC_OID_PKCS1_SHA256_WITH_RSA_ENCRYPTION = 194;
 const SEC_OID_PKCS1_SHA384_WITH_RSA_ENCRYPTION = 195;
@@ -157,110 +165,57 @@ function decodeSECItem(base64urldata) {
 function generate(params) {
     try {
         var nspr4 = ctypes.open("nspr4");
-        var PR_GetError = nspr4.declare("PR_GetError",
-                                        ctypes.winapi_abi,
-                                        ctypes.int32_t);
-        var PR_GetErrorTextLength = nspr4.declare("PR_GetErrorTextLength",
-                                                  ctypes.winapi_abi,
-                                                  ctypes.int32_t);
-        var PR_GetErrorText = nspr4.declare("PR_GetErrorText",
-                                            ctypes.winapi_abi,
-                                            ctypes.int32_t,
-                                            ctypes.char.ptr);
+        var PR_GetError =
+            nspr4.declare("PR_GetError",
+                          ABI,
+                          ctypes.int32_t);
         var nss3 = ctypes.open("nss3");
-        var PK11_GetInternalSlot = nss3.declare("PK11_GetInternalSlot",
-                                                ctypes.winapi_abi,
-                                                PK11SlotInfo.ptr);
-        var PK11_FreeSlot = nss3.declare("PK11_FreeSlot",
-                                         ctypes.winapi_abi,
-                                         ctypes.void_t,
-                                         PK11SlotInfo.ptr);
-        var PK11_GenerateKeyPair = nss3.declare("PK11_GenerateKeyPair",
-                                                ctypes.winapi_abi,
-                                                SECKEYPrivateKey.ptr, // SECKEYPrivateKey *
-                                                PK11SlotInfo.ptr, // PK11SlotInfo *slot
-                                                ctypes.unsigned_long, // CK_MECHANISM_TYPE type
-                                                ctypes.voidptr_t, // void *param
-                                                SECKEYPublicKey.ptr.ptr, // SECKEYPublicKey **pubk
-                                                ctypes.bool, // PRBool isPerm
-                                                ctypes.bool, // PRBool isSensitive
-                                                ctypes.voidptr_t); // void *wincx
-        var SECKEY_DestroyPublicKey = nss3.declare("SECKEY_DestroyPublicKey",
-                                                   ctypes.winapi_abi,
-                                                   ctypes.void_t,
-                                                   SECKEYPublicKey.ptr);
-        var SECKEY_DestroyPrivateKey = nss3.declare("SECKEY_DestroyPrivateKey",
-                                                    ctypes.winapi_abi,
-                                                    ctypes.void_t,
-                                                    SECKEYPrivateKey.ptr);
-        var PK11_GetBestWrapMechanism = nss3.declare("PK11_GetBestWrapMechanism",
-                                                     ctypes.winapi_abi,
-                                                     ctypes.unsigned_long, //CK_MECHANISM_TYPE
-                                                     PK11SlotInfo.ptr); // slot
-        var PK11_GetBestKeyLength = nss3.declare("PK11_GetBestKeyLength",
-                                                 ctypes.winapi_abi,
-                                                 ctypes.int,
-                                                 PK11SlotInfo.ptr, // slot
-                                                 ctypes.unsigned_long); // CK_MECHANISM_TYPE
-        var PK11_ImportSymKey = nss3.declare("PK11_ImportSymKey",
-                                             ctypes.winapi_abi,
-                                             PK11SymKey.ptr,
-                                             PK11SlotInfo.ptr, // slot
-                                             CK_MECHANISM_TYPE, // type
-                                             PK11Origin, // origin
-                                             CK_ATTRIBUTE_TYPE, // operation
-                                             SECItem.ptr, // key
-                                             ctypes.voidptr_t); // wincx
-        var PK11_ParamFromIV = nss3.declare("PK11_ParamFromIV",
-                                            ctypes.winapi_abi,
-                                            SECItem.ptr,
-                                            CK_MECHANISM_TYPE, // type
-                                            SECItem.ptr); // iv
-        var PK11_WrapPrivKey = nss3.declare("PK11_WrapPrivKey",
-                                            ctypes.winapi_abi,
-                                            ctypes.int, // SECStatus
-                                            PK11SlotInfo.ptr, // slot
-                                            PK11SymKey.ptr, // wrappingKey
-                                            SECKEYPrivateKey.ptr, // privKey
-                                            ctypes.unsigned_long, // CK_MECHANISM_TYPE wrapType
-                                            SECItem.ptr, // param
-                                            SECItem.ptr, // wrappedKey
-                                            ctypes.voidptr_t); // wincx
-        var PK11_KeyGen = nss3.declare("PK11_KeyGen",
-                                       ctypes.winapi_abi,
-                                       PK11SymKey.ptr,
-                                       PK11SlotInfo.ptr, // slot
-                                       ctypes.unsigned_long, // CK_MECHANISM_TYPE type
-                                       SECItem.ptr, // param
-                                       ctypes.int, // keySize
-                                       ctypes.voidptr_t); // wincx
-        var PK11_ExtractKeyValue = nss3.declare("PK11_ExtractKeyValue",
-                                                ctypes.winapi_abi,
-                                                ctypes.int, // SECStatus
-                                                PK11SymKey.ptr); // symKey
-        var PK11_GetKeyData = nss3.declare("PK11_GetKeyData",
-                                           ctypes.winapi_abi,
-                                           SECItem.ptr,
-                                           PK11SymKey.ptr); // symKey
-        var PK11_ExportPrivateKeyInfo = nss3.declare("PK11_ExportPrivateKeyInfo",
-                                                     ctypes.winapi_abi,
-                                                     SECKEYPrivateKeyInfo.ptr,
-                                                     CERTCertificate.ptr, // cert
-                                                     ctypes.voidptr_t); // wincx
-        var PK11_ExportEncryptedPrivKeyInfo = nss3.declare("PK11_ExportEncryptedPrivKeyInfo",
-                                                           ctypes.winapi_abi,
-                                                           SECKEYEncryptedPrivateKeyInfo.ptr,
-                                                           PK11SlotInfo.ptr,
-                                                           ctypes.int, /* SECOidTag */
-                                                           SECItem.ptr,
-                                                           SECKEYPrivateKey.ptr,
-                                                           ctypes.int,
-                                                           ctypes.voidptr_t);
-        var SECKEY_DestroyEncryptedPrivateKeyInfo = nss3.declare("SECKEY_DestroyEncryptedPrivateKeyInfo",
-                                                                 ctypes.winapi_abi,
-                                                                 ctypes.void_t,
-                                                                 SECKEYEncryptedPrivateKeyInfo.ptr,
-                                                                 ctypes.bool);
+        var PK11_GetInternalSlot =
+            nss3.declare("PK11_GetInternalSlot",
+                         ABI,
+                         PK11SlotInfo.ptr);
+        var PK11_FreeSlot =
+            nss3.declare("PK11_FreeSlot",
+                         ABI,
+                         ctypes.void_t,
+                         PK11SlotInfo.ptr);
+        var PK11_GenerateKeyPair =
+            nss3.declare("PK11_GenerateKeyPair",
+                         ABI,
+                         SECKEYPrivateKey.ptr,
+                         PK11SlotInfo.ptr, // slot
+                         CK_MECHANISM_TYPE, // type
+                         ctypes.voidptr_t, // param
+                         SECKEYPublicKey.ptr.ptr, // pubk
+                         ctypes.bool, // isPerm
+                         ctypes.bool, // isSensitive
+                         ctypes.voidptr_t); // wincx
+        var SECKEY_DestroyPublicKey =
+            nss3.declare("SECKEY_DestroyPublicKey",
+                         ABI,
+                         ctypes.void_t,
+                         SECKEYPublicKey.ptr);
+        var SECKEY_DestroyPrivateKey =
+            nss3.declare("SECKEY_DestroyPrivateKey",
+                         ABI,
+                         ctypes.void_t,
+                         SECKEYPrivateKey.ptr);
+        var PK11_ExportEncryptedPrivKeyInfo =
+            nss3.declare("PK11_ExportEncryptedPrivKeyInfo",
+                         ABI,
+                         SECKEYEncryptedPrivateKeyInfo.ptr,
+                         PK11SlotInfo.ptr, // slot
+                         SECOidTag, // algTag
+                         SECItem.ptr, // pwItem
+                         SECKEYPrivateKey.ptr, // pk
+                         ctypes.int, // iteration
+                         ctypes.voidptr_t); // wincx
+        var SECKEY_DestroyEncryptedPrivateKeyInfo =
+            nss3.declare("SECKEY_DestroyEncryptedPrivateKeyInfo",
+                         ABI,
+                         ctypes.void_t,
+                         SECKEYEncryptedPrivateKeyInfo.ptr,
+                         ctypes.bool);
 
         var slot = PK11_GetInternalSlot();
         if (!slot) {
@@ -289,82 +244,18 @@ function generate(params) {
                                               true,
                                               null);
         if (privateKey.isNull()) {
-            let rv = PR_GetError();
-            let buffer = ctypes.char.array(PR_GetErrorTextLength() + 1)();
-            PR_GetErrorText(buffer);
-            throw {rv: rv,
+            throw {rv: PR_GetError() || -1,
                    message: "No private key generated"};
         }
         if (publicKey.isNull()) {
-            SECKEY_DestroyPrivateKey(privateKey);
-            privateKey = null;
             throw {rv: -1,
                    message: "PK11_GnerateKeyPair returned private key without public key"};
         }
 
-        //// Wrap the private key with a symmetric key so we can get it out
-        ////var mechanism = PK11_GetBestWrapMechanism(slot);
-        ////var mechanism = CKM_DES3_ECB;
-        //var mechanism = CKM_DES3_CBC_PAD;
-        //var symkeylen = PK11_GetBestKeyLength(slot, mechanism);
-        //var symkey = PK11_KeyGen(slot, mechanism, null, symkeylen, null);
-        //if (!symkey || symkey.isNull()) {
-        //    throw { rv: PR_GetError() || -1,
-        //            message: "Failed to generate symmetric key" };
-        //}
-        //var wrappedKey = new SECItem();
-        //wrappedKey.type = SECItemType.siBuffer;
-        //wrappedKey.data = ctypes.cast(ctypes.uint8_t.array(4096)().address(),
-        //                              ctypes.uint8_t.ptr);
-        //wrappedKey.length = 4096;
-        //var ivItem = new SECItem();
-        //ivItem.type = SECItemType.siBuffer;
-        //ivItem.length = symkeylen;
-        //ivItem.data = ctypes.cast(ctypes.uint8_t.array(ivItem.length)().address(),
-        //                          ctypes.uint8_t.ptr);
-        //var secParam = PK11_ParamFromIV(mechanism, ivItem.address());
-        //if (!secParam || secParam.isNull()) {
-        //    throw { rv: PR_GetError() || -1,
-        //            message: "Failed to make param from IV" };
-        //}
-        //postMessage({log: "Got sec param " + secParam});
-        //let rv = PK11_WrapPrivKey(slot, symkey, privateKey, mechanism,
-        //                          secParam, wrappedKey.address(), null);
-        //if (rv) {
-        //    throw { rv: PR_GetError() || -1,
-        //            message: "Failed to wrap private key: " +
-        //                     "\nslot: " + slot +
-        //                     "\nsymkey: " + symkey +
-        //                     "\nsymkeylen: " + symkeylen +
-        //                     "\nprivateKey: " + privateKey +
-        //                     "\nmechanism: " + mechanism +
-        //                     "\nwrappedKey: " + wrappedKey.address() +
-        //                     "\nwrappedKey data: " + wrappedKey.data};
-        //}
-        //if (PK11_ExtractKeyValue(symkey)) {
-        //    throw { rv: PR_GetError() || -1,
-        //            message: "Failed to extract symmetric key to wrap private key" };
-        //}
-        //var symkeydata = PK11_GetKeyData(symkey);
-        //if (!symkeydata || symkeydata.isNull()) {
-        //    throw { rv: PR_GetError() || -1,
-        //            message: "Failed to extract symmetric key data" };
-        //}
-        //postMessage({log: "Almost done: " +
-        //            "\n modulus: " + publicKey.contents.rsa.modulus.length +
-        //            "\n exponent: " + publicKey.contents.rsa.publicExponent.length +
-        //            "\n symkey: " + symkeydata.contents.length +
-        //            "\n \t " + [ctypes.cast(symkeydata.contents.data,
-        //                                    ctypes.uint8_t.array(10).ptr).contents[i]
-        //                        for (i in range(10))] +
-        //            "\n wrappedKey:" + wrappedKey.length +
-        //            "\n \t " + [ctypes.cast(wrappedKey.data,
-        //                                    ctypes.uint8_t.array(10).ptr).contents[i]
-        //                        for (i in range(10))] +
-        //            ""});
-        
+        // Export the private key so we can save it.
+        // TODO: figure out how we can leave it on the slot and ask for it later
         let password = new SECItem(0, null, 0);
-        let privateKeyInfo = PK11_ExportEncryptedPrivKeyInfo(slot,
+        var privateKeyInfo = PK11_ExportEncryptedPrivKeyInfo(slot,
                                                              SEC_OID_AES_256_CBC,
                                                              password.address(),
                                                              privateKey,
@@ -387,11 +278,18 @@ function generate(params) {
                              }});
     } finally {
         // clean up
-        if (publicKey && !publicKey.isNull()) SECKEY_DestroyPublicKey(publicKey);
-        if (privateKey && !privateKey.isNull()) SECKEY_DestroyPrivateKey(privateKey);
-        if (slot) PK11_FreeSlot(slot);
-        if (nss3) nss3.close();
-        if (nspr4) nspr4.close();
+        if (privateKeyInfo && !privateKeyInfo.isNull())
+            SECKEY_DestroyEncryptedPrivateKeyInfo(privateKeyInfo, true);
+        if (publicKey && !publicKey.isNull())
+            SECKEY_DestroyPublicKey(publicKey);
+        if (privateKey && !privateKey.isNull())
+            SECKEY_DestroyPrivateKey(privateKey);
+        if (slot)
+            PK11_FreeSlot(slot);
+        if (nss3)
+            nss3.close();
+        if (nspr4)
+            nspr4.close();
     }
 }
 
@@ -409,122 +307,29 @@ function generate(params) {
 function sign(params) {
     try {
         var nspr4 = ctypes.open("nspr4");
-        var PR_GetError = nspr4.declare("PR_GetError",
-                                        ctypes.winapi_abi,
-                                        ctypes.int32_t);
-        var PR_GetErrorTextLength = nspr4.declare("PR_GetErrorTextLength",
-                                                  ctypes.winapi_abi,
-                                                  ctypes.int32_t);
-        var PR_GetErrorText = nspr4.declare("PR_GetErrorText",
-                                            ctypes.winapi_abi,
-                                            ctypes.int32_t,
-                                            ctypes.char.ptr);
+        var PR_GetError =
+            nspr4.declare("PR_GetError",
+                          ABI,
+                          ctypes.int32_t);
         var nss3 = ctypes.open("nss3");
-        var PK11_GetInternalSlot = nss3.declare("PK11_GetInternalSlot",
-                                                ctypes.winapi_abi,
-                                                PK11SlotInfo.ptr);
-        var PK11_FreeSlot = nss3.declare("PK11_FreeSlot",
-                                         ctypes.winapi_abi,
-                                         ctypes.void_t,
-                                         PK11SlotInfo.ptr);
-        var PK11_GenerateKeyPair = nss3.declare("PK11_GenerateKeyPair",
-                                                ctypes.winapi_abi,
-                                                SECKEYPrivateKey.ptr, // SECKEYPrivateKey *
-                                                PK11SlotInfo.ptr, // PK11SlotInfo *slot
-                                                ctypes.unsigned_long, // CK_MECHANISM_TYPE type
-                                                ctypes.voidptr_t, // void *param
-                                                SECKEYPublicKey.ptr.ptr, // SECKEYPublicKey **pubk
-                                                ctypes.bool, // PRBool isPerm
-                                                ctypes.bool, // PRBool isSensitive
-                                                ctypes.voidptr_t); // void *wincx
-        var SECKEY_DestroyPublicKey = nss3.declare("SECKEY_DestroyPublicKey",
-                                                   ctypes.winapi_abi,
-                                                   ctypes.void_t,
-                                                   SECKEYPublicKey.ptr);
-        var SECKEY_DestroyPrivateKey = nss3.declare("SECKEY_DestroyPrivateKey",
-                                                    ctypes.winapi_abi,
-                                                    ctypes.void_t,
-                                                    SECKEYPrivateKey.ptr);
-        var SEC_SignData = nss3.declare("SEC_SignData",
-                                        ctypes.winapi_abi,
-                                        ctypes.int, // SECStatus
-                                        SECItem.ptr, // result
-                                        ctypes.uint8_t.ptr, // buf
-                                        ctypes.int, // len
-                                        SECKEYPrivateKey.ptr, // pk
-                                        ctypes.int); // SECOidTag tag
-        var PK11_ExportEncryptedPrivKeyInfo = nss3.declare("PK11_ExportEncryptedPrivKeyInfo",
-                                                           ctypes.winapi_abi,
-                                                           SECKEYEncryptedPrivateKeyInfo.ptr,
-                                                           PK11SlotInfo.ptr,
-                                                           ctypes.int, /* SECOidTag */
-                                                           SECItem.ptr,
-                                                           SECKEYPrivateKey.ptr,
-                                                           ctypes.int,
-                                                           ctypes.voidptr_t);
-        var PK11_ImportPrivateKeyInfoAndReturnKey = nss3.declare("PK11_ImportPrivateKeyInfoAndReturnKey",
-                                                                 ctypes.winapi_abi,
-                                                                 ctypes.int, // SECStatus
-                                                                 PK11SlotInfo.ptr, // slot
-                                                                 SECKEYPrivateKeyInfo.ptr, // pki
-                                                                 SECItem.ptr, // nickname
-                                                                 SECItem.ptr, // publicValue
-                                                                 ctypes.bool, // isPerm
-                                                                 ctypes.bool, // isPrivate
-                                                                 ctypes.unsigned_int, // usage
-                                                                 SECKEYPrivateKey.ptr.ptr, // privk
-                                                                 ctypes.voidptr_t); // wincx
-
-        var SECKEY_DestroyEncryptedPrivateKeyInfo = nss3.declare("SECKEY_DestroyEncryptedPrivateKeyInfo",
-                                                                 ctypes.winapi_abi,
-                                                                 ctypes.void_t,
-                                                                 SECKEYEncryptedPrivateKeyInfo.ptr,
-                                                                 ctypes.bool);
-        var PK11_UnwrapPrivKey = nss3.declare("PK11_UnwrapPrivKey",
-                                              ctypes.winapi_abi,
-                                              SECKEYPrivateKey.ptr,
-                                              PK11SlotInfo.ptr, // slot
-                                              PK11SymKey.ptr, // wrappingKey
-                                              CK_MECHANISM_TYPE, // wrapType
-                                              SECItem.ptr, // param
-                                              SECItem.ptr, // wrappedKey
-                                              SECItem.ptr, // label
-                                              SECItem.ptr, // publicValue
-                                              ctypes.bool, // token
-                                              ctypes.bool, // sensitive
-                                              CK_KEY_TYPE, // keyType
-                                              CK_ATTRIBUTE_TYPE.ptr, // usage
-                                              ctypes.int, // usageCount
-                                              ctypes.voidptr_t); // wincx
-        var PK11_GetKeyType = nss3.declare("PK11_GetKeyType",
-                                           ctypes.winapi_abi,
-                                           CK_MECHANISM_TYPE,
-                                           CK_MECHANISM_TYPE, // type
-                                           ctypes.unsigned_long); // len
-        var PK11_GetBestKeyLength = nss3.declare("PK11_GetBestKeyLength",
-                                                 ctypes.winapi_abi,
-                                                 ctypes.int,
-                                                 PK11SlotInfo.ptr, // slot
-                                                 CK_MECHANISM_TYPE); // type
-        var PK11_ParamFromIV = nss3.declare("PK11_ParamFromIV",
-                                            ctypes.winapi_abi,
-                                            SECItem.ptr,
-                                            CK_MECHANISM_TYPE, // type
-                                            SECItem.ptr); // iv
-
-        var PK11_ImportSymKey = nss3.declare("PK11_ImportSymKey",
-                                             ctypes.winapi_abi,
-                                             PK11SymKey.ptr,
-                                             PK11SlotInfo.ptr, // slot
-                                             CK_MECHANISM_TYPE, // type
-                                             PK11Origin, // origin
-                                             CK_ATTRIBUTE_TYPE, // operation
-                                             SECItem.ptr, // key
-                                             ctypes.voidptr_t); // wincx
-
+        var PK11_GetInternalSlot =
+            nss3.declare("PK11_GetInternalSlot",
+                         ABI,
+                         PK11SlotInfo.ptr);
+        var PK11_FreeSlot =
+            nss3.declare("PK11_FreeSlot",
+                         ABI,
+                         ctypes.void_t,
+                         PK11SlotInfo.ptr);
+        var PK11_GetKeyType =
+            nss3.declare("PK11_GetKeyType",
+                         ABI,
+                         CK_MECHANISM_TYPE,
+                         CK_MECHANISM_TYPE, // type
+                         ctypes.unsigned_long); // len
         var PK11_ImportEncryptedPrivateKeyInfoAndReturnKey =
             nss3.declare("PK11_ImportEncryptedPrivateKeyInfoAndReturnKey",
-                         ctypes.winapi_abi,
+                         ABI,
                          SECStatus,
                          PK11SlotInfo.ptr, // slot
                          SECKEYEncryptedPrivateKeyInfo.ptr, // epki
@@ -537,6 +342,20 @@ function sign(params) {
                          ctypes.unsigned_int, // usage
                          SECKEYPrivateKey.ptr.ptr, // privk
                          ctypes.voidptr_t); // wincx
+        var SECKEY_DestroyPrivateKey =
+            nss3.declare("SECKEY_DestroyPrivateKey",
+                         ABI,
+                         ctypes.void_t,
+                         SECKEYPrivateKey.ptr);
+        var SEC_SignData =
+            nss3.declare("SEC_SignData",
+                         ABI,
+                         SECStatus,
+                         SECItem.ptr, // result
+                         ctypes.uint8_t.ptr, // buf
+                         ctypes.int, // len
+                         SECKEYPrivateKey.ptr, // pk
+                         SECOidTag); // tag
 
         var slot = PK11_GetInternalSlot();
         if (!slot) {
@@ -547,7 +366,6 @@ function sign(params) {
         // Load the public key
         var publicValue, usage, keyType, tag;
         if (/^RS/.test(params.pubkey.alg)) {
-            const CKM_RSA_PKCS_KEY_PAIR_GEN = 0x00000000;
             publicValue = decodeSECItem(params.pubkey.mod);
             usage = [CKA_SIGN, CKA_DECRYPT, CKA_SIGN_RECOVER, CKA_UNWRAP];
             keyType = PK11_GetKeyType(CKM_RSA_PKCS_KEY_PAIR_GEN, 0);
@@ -558,15 +376,20 @@ function sign(params) {
             }
             if (!(params.pubkey.alg in tags)) {
                 throw { rv: -1,
-                        message: "public key uses unsupported algorithm " + params.pubkey.alg};
+                        message: "public key uses unsupported algorithm " +
+                                 params.pubkey.alg };
             }
             tag = tags[params.pubkey.alg];
+        } else {
+            throw { rv: -1,
+                    message: "public key uses unsupport algorithm family " +
+                             params.pubkey.alg };
         }
         let usageItem = CK_ATTRIBUTE_TYPE.array(usage.length)(usage);
 
         let password = new SECItem(0, null, 0);
         let nickname = new SECItem(0, null, 0);
-        let privkey = new SECKEYPrivateKey.ptr();
+        var privkey = new SECKEYPrivateKey.ptr();
         let epki = new SECKEYEncryptedPrivateKeyInfo();
         epki.arena = null;
         epki.algorithm = new SECAlgorithmID();
@@ -588,9 +411,7 @@ function sign(params) {
             throw { rv: PR_GetError() || -1,
                     message: "Failed to import private key" };
         }
-        postMessage({log: "got private key: " + privkey});
 
-        postMessage({log: "signing data " + params.data});
         let signedData = new SECItem();
         signedData.type = SECItemType.siClearDataBuffer;
         signedData.length = 4096;
@@ -608,19 +429,18 @@ function sign(params) {
             throw { rv: PR_GetError() || -1,
                     message: "Failed to sign data" };
         }
-        postMessage({log: "sign result: " +
-                          atob(encodeSECItem(signedData)
-                                .replace(/-/g, "+").replace(/_/g, "/"))
-                          .split("")
-                          .map(function(c)
-                                 ("00" + c.charCodeAt(0).toString(16)).substr(-2))});
         postMessage({rv: 0, signature: encodeSECItem(signedData)});
         
     } finally {
         // clean up
-        if (slot) PK11_FreeSlot(slot);
-        if (nss3) nss3.close();
-        if (nspr4) nspr4.close();
+        if (privkey)
+            SECKEY_DestroyPrivateKey(privkey);
+        if (slot)
+            PK11_FreeSlot(slot);
+        if (nss3)
+            nss3.close();
+        if (nspr4)
+            nspr4.close();
     }
 }
 

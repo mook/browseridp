@@ -10,6 +10,17 @@ function getString(doc, key) {
     return template.getAttribute("data-" + key);
 }
 
+function debug(msg, ...rest) {
+    const prefName = "extensions.browseridp.debug";
+    if (Services.prefs.getPrefType(prefName) != Ci.nsIPrefBranch.PREF_BOOL)
+        return;
+    if (!Services.prefs.getBoolPref(prefName))
+        return;
+    Services.console.logStringMessage("BrowserIdP: " +
+                                      String(msg) +
+                                      rest.join(", "));
+}
+
 const Options = {
     startup: function Options_startup(data) {
         this.addonData = data;
@@ -28,6 +39,12 @@ const Options = {
                 this[funcName](subject);
             }
         }
+    },
+    refresh: function Options_refresh(doc) {
+        Services.tm.currentThread.dispatch(function() {
+            Options.onAddonOptionsHidden(doc);
+            Options.onAddonOptionsDisplayed(doc);
+        }, Ci.nsIEventTarget.DISPATCH_NORMAL);
     },
     onGenerate: function Options_onGenerate(event) {
         let doc = event.target.ownerDocument;
@@ -59,16 +76,13 @@ const Options = {
                 Services.logins.addLogin(login);
             }
             // redraw the whole page to show the new domain
-            Services.tm.currentThread.dispatch(function() {
-                Options.onAddonOptionsHidden(doc);
-                Options.onAddonOptionsDisplayed(doc);
-            }, Ci.nsIEventTarget.DISPATCH_NORMAL);
+            Options.refresh(doc);
         }
         try {
             var worker = ChromeWorker("chrome://browseridp/content/crypto.js?" + Date.now());
             worker.onmessage = function(event) {
                 if ("log" in event.data) {
-                    Cu.reportError(event.data.log);
+                    debug(event.data.log);
                     return;
                 }
                 try {
@@ -77,7 +91,7 @@ const Options = {
                         return;
                     }
                     result = event.data;
-                    Cu.reportError("got key: " + JSON.stringify(result));
+                    debug("got key: " + JSON.stringify(result));
                     if (host !== undefined) {
                         if (host) {
                             accept();
@@ -121,8 +135,6 @@ const Options = {
         let pubkey = JSON.parse(login.username);
         let params = {
             "public-key": pubkey,
-            // XXX Mook: The URLs here are a hack to let the extension know it
-            // should intercept the load
             "authentication": "chrome://browseridp/content/sign_in.html",
             "provisioning": "chrome://browseridp/content/provision.html",
         };
@@ -155,10 +167,7 @@ const Options = {
         if (logins.length) {
             Services.logins.removeLogin(logins[0]);
         }
-        Services.tm.currentThread.dispatch(function() {
-            Options.onAddonOptionsHidden(doc);
-            Options.onAddonOptionsDisplayed(doc);
-        }, Ci.nsIEventTarget.DISPATCH_NORMAL);
+        Options.refresh(doc);
     },
     onAddonOptionsDisplayed: function Options_onAddonOptionsDisplayed(doc) {
         let logins = Services.logins.findLogins({}, "x-browseridp:",

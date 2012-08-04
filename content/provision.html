@@ -7,14 +7,29 @@
         const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
         Cu.import("resource://gre/modules/Services.jsm");
 
-        function base64(str)
-            btoa(unescape(encodeURIComponent(str))).replace(/\+/g, "-").replace(/\//g, "_");
+        function base64url(str)
+            btoa(unescape(encodeURIComponent(str)))
+                .replace(/\+/g, "-").replace(/\//g, "_");
+
+        function debug(msg, ...rest) {
+            const prefName = "extensions.browseridp.debug";
+            if (Services.prefs.getPrefType(prefName) != Ci.nsIPrefBranch.PREF_BOOL)
+                return;
+            if (!Services.prefs.getBoolPref(prefName))
+                return;
+            Services.console.logStringMessage("BrowserIdP: " +
+                                              String(msg) +
+                                              rest.join(", "));
+        }
 
         addEventListener("load", function() {
-            Cu.reportError("navigator.id: " + navigator.id);
-            
             navigator.id.beginProvisioning(function(email, cert_duration) {
-                Cu.reportError("beginProvisioning: "+ email + " / " + cert_duration);
+                debug("beginProvisioning: "+ email + " / " +
+                      cert_duration + " = " + new Date(Date.now() + cert_duration * 1000));
+                if (!/^.+@/.test(email)) {
+                    navigator.id.raiseProvisioningFailure("Failed to provision: invalid email " + email);
+                    return;
+                }
                 let host = email.replace(/^.*@/, "");
                 let logins = Services.logins.findLogins({}, "x-browseridp:",
                                                         null, host);
@@ -25,43 +40,43 @@
                 }
                 cert_duration = Math.min(cert_duration, 60 * 10); // at most 10 minutes
                 cert_duration = Math.max(cert_duration, 60 * 1); // at least 1 minute
+                // XXX Mook: the spec says seconds-since-epoch, but the reference
+                // implementation takes millisecons-since-epoch (JS new Date())
                 let cert_expiry = Date.now() + cert_duration * 1000;
                 let login = logins[0];
                 navigator.id.genKeyPair(function(pubkey) {
-                    
-                    //let payload = {
-                    //    version: "2012.08.15",
-                    //    publicKey: JSON.parse(login.username),
-                    //    principal: pubkey.prinicipal,
-                    //}
-                    Cu.reportError("genKeypair got pubkey: " + JSON.stringify(pubkey));
+                    debug("genKeypair got pubkey: ", JSON.stringify(pubkey));
                     let header = {"typ": "JWT", "alg": "RS256"};
                     let payload = {"iss": host,
                                    "exp": cert_expiry,
                                    "public-key": pubkey,
                                    "principal": {
-                                        "email": email
+                                        "email": email,
                                    }
                                   };
-                    let data = (base64(JSON.stringify(header)) + "." +
-                                base64(JSON.stringify(payload))).replace(/=+$/, "");
+                    let data = [header, payload]
+                                .map(JSON.stringify)
+                                .map(base64url)
+                                .map(function(s) s.replace(/=+$/, ""))
+                                .join(".");
 
                     var worker = ChromeWorker("chrome://browseridp/content/crypto.js?" + Date.now());
                     worker.onmessage = function(event) {
                         try {
                             if ("log" in event.data) {
-                                Cu.reportError(String(event.data.log));
+                                debug(event.data.log);
                                 return;
                             }
                             if (("rv" in event.data) && event.data.rv) {
-                                Cu.reportError(event.data.rv + ": " + String(event.data.message));
+                                debug(event.data.rv + ": " + String(event.data.message));
                                 navigator.id.raiseProvisioningFailure("Failed to provision: rv=" + event.data.rv +
                                                                       ", message: " + String(event.data.message));
                                 return;
                             }
-                            result = event.data.signature;
-                            Cu.reportError('got cert: ' + JSON.stringify(event.data));
-                            navigator.id.registerCertificate(data + "." + result.replace(/=+$/, ""));
+                            let result = [data,
+                                          event.data.signature.replace(/=+$/, "")];
+                            debug('got cert: ' + JSON.stringify(event.data));
+                            navigator.id.registerCertificate(result.join("."));
                         } catch (ex) {
                             navigator.id.raiseProvisioningFailure("Failed to provision: exception " + String(ex));
                             Cu.reportError(ex);
@@ -72,9 +87,6 @@
                                         pubkey: JSON.parse(login.username),
                                         privkey: JSON.parse(login.password),
                                        });
-
-                    //let certificate = data + "." + signature;
-                    //navigator.id.registerCertificate(certificate);
                 });
             });
         });
