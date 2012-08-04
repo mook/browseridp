@@ -26,8 +26,8 @@
                     navigator.id.raiseProvisioningFailure("BrowserIdP cannot provision for host " + host);
                     return;
                 }
-                cert_duration = Math.max(cert_duration, 60 * 10); // at most 10 minutes
-                cert_duration = Math.min(cert_duration, 60 * 1); // at least 1 minute
+                cert_duration = Math.min(cert_duration, 60 * 10); // at most 10 minutes
+                cert_duration = Math.max(cert_duration, 60 * 1); // at least 1 minute
                 let cert_expiry = Date.now() + cert_duration * 1000;
                 let login = logins[0];
                 navigator.id.genKeyPair(function(pubkey) {
