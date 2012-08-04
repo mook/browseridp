@@ -166,8 +166,7 @@ function decodeSECItem(base64urldata) {
  * @param [optional] nss3 {ctypes.Library} NSS library pointer
  * @param [optional] nspr4 {ctypes.Library} NSPR library pointer
  * @param [optional] slot {PK11SlotInfo.ptr} slot
- * @returns SECKEYEncryptedPrivateKeyInfo.ptr The encrypted private key
- * @note The result should be freed with SECKEY_DestroyEncryptedPrivateKeyInfo
+ * @returns {Object} An object with .alg.id, .alg.params, and .data fields
  */
 function encryptPrivateKey(privateKey, password="", nss3=null, nspr4=null, slot=null) {
     var free = {};
@@ -206,6 +205,12 @@ function encryptPrivateKey(privateKey, password="", nss3=null, nspr4=null, slot=
                          SECKEYPrivateKey.ptr, // pk
                          ctypes.int, // iteration
                          ctypes.voidptr_t); // wincx
+        var SECKEY_DestroyEncryptedPrivateKeyInfo =
+            nss3.declare("SECKEY_DestroyEncryptedPrivateKeyInfo",
+                         ABI,
+                         ctypes.void_t,
+                         SECKEYEncryptedPrivateKeyInfo.ptr,
+                         ctypes.bool);
 
         if (!slot) {
             slot = PK11_GetInternalSlot();
@@ -234,9 +239,17 @@ function encryptPrivateKey(privateKey, password="", nss3=null, nspr4=null, slot=
             throw { rv: PR_GetError() || -1,
                     message: "Failed to encrypt private key" };
 
-        return privateKeyInfo;
+        return {
+            alg: {
+                id: encodeSECItem(privateKeyInfo.contents.algorithm.algorithm),
+                params: encodeSECItem(privateKeyInfo.contents.algorithm.parameters),
+            },
+            data: encodeSECItem(privateKeyInfo.contents.encryptedData),
+        };
 
     } finally {
+        if (privateKeyInfo && !privateKeyInfo.isNull())
+            SECKEY_DestroyEncryptedPrivateKeyInfo(privateKeyInfo, true);
         if (("slot" in free) && slot)
             PK11_FreeSlot(slot);
         if (("nss3" in free) && nss3)
@@ -429,12 +442,6 @@ function generate(params) {
                          ABI,
                          ctypes.void_t,
                          SECKEYPrivateKey.ptr);
-        var SECKEY_DestroyEncryptedPrivateKeyInfo =
-            nss3.declare("SECKEY_DestroyEncryptedPrivateKeyInfo",
-                         ABI,
-                         ctypes.void_t,
-                         SECKEYEncryptedPrivateKeyInfo.ptr,
-                         ctypes.bool);
 
         var slot = PK11_GetInternalSlot();
         if (!slot) {
@@ -473,7 +480,7 @@ function generate(params) {
 
         // Export the private key so we can save it.
         // TODO: figure out how we can leave it on the slot and ask for it later
-        var privateKeyInfo = encryptPrivateKey(privateKey, "", nss3, nspr4, slot);
+        var privateKeyData = encryptPrivateKey(privateKey, "", nss3, nspr4, slot);
         let pubkeyData = { alg: params.alg };
         if (/^RS/.test(params.alg)) {
             pubkeyData.algorithm = "RS";
@@ -482,17 +489,9 @@ function generate(params) {
         }
         return postMessage({ rv: 0,
                              pubkey: pubkeyData,
-                             privateKey: {
-                                alg: {
-                                    id: encodeSECItem(privateKeyInfo.contents.algorithm.algorithm),
-                                    params: encodeSECItem(privateKeyInfo.contents.algorithm.parameters),
-                                },
-                                data: encodeSECItem(privateKeyInfo.contents.encryptedData),
-                             }});
+                             privateKey: privateKeyData});
     } finally {
         // clean up
-        if (privateKeyInfo && !privateKeyInfo.isNull())
-            SECKEY_DestroyEncryptedPrivateKeyInfo(privateKeyInfo, true);
         if (publicKey && !publicKey.isNull())
             SECKEY_DestroyPublicKey(publicKey);
         if (privateKey && !privateKey.isNull())
