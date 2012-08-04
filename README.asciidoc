@@ -19,5 +19,4 @@ The keys are stored in the Firefox/Gecko Login Manager; filter for "x-browseridp
 These should go into the github issues list, but in the mean time...
 
 - Need to do the NSS shutdown lock stuff (i.e. will probably crash on shutdown if it's attempting to process something)
-- Implement key export
-- Implement key import
+- Key version upgrades (e.g. importing from an old version with different key formats; addon updates)
