@@ -130,7 +130,6 @@ const CERTCertificate = ctypes.StructType("CERTCertificate");
  * Encode a SECItem
  */
 function encodeSECItem(item) {
-    var s = "";
     var array = ctypes.cast(item.data,
                             ctypes.uint8_t.array(item.length).ptr).contents;
     return btoa(String.fromCharCode.apply(null, array))
@@ -590,7 +589,8 @@ function sign(params) {
                     message: "Failed to import private key" };
         }
         postMessage({log: "got private key: " + privkey});
-        
+
+        postMessage({log: "signing data " + params.data});
         let signedData = new SECItem();
         signedData.type = SECItemType.siClearDataBuffer;
         signedData.length = 4096;
@@ -608,6 +608,12 @@ function sign(params) {
             throw { rv: PR_GetError() || -1,
                     message: "Failed to sign data" };
         }
+        postMessage({log: "sign result: " +
+                          atob(encodeSECItem(signedData)
+                                .replace(/-/g, "+").replace(/_/g, "/"))
+                          .split("")
+                          .map(function(c)
+                                 ("00" + c.charCodeAt(0).toString(16)).substr(-2))});
         postMessage({rv: 0, signature: encodeSECItem(signedData)});
         
     } finally {

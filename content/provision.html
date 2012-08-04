@@ -28,7 +28,7 @@
                 }
                 cert_duration = Math.max(cert_duration, 60 * 10); // at most 10 minutes
                 cert_duration = Math.min(cert_duration, 60 * 1); // at least 1 minute
-                let cert_expiry = (Date.now() / 1000) >> 0 + cert_duration;
+                let cert_expiry = Date.now() + cert_duration * 1000;
                 let login = logins[0];
                 navigator.id.genKeyPair(function(pubkey) {
                     
@@ -46,8 +46,8 @@
                                         "email": email
                                    }
                                   };
-                    let data = base64(JSON.stringify(header)) + "." +
-                               base64(JSON.stringify(payload));
+                    let data = (base64(JSON.stringify(header)) + "." +
+                                base64(JSON.stringify(payload))).replace(/=+$/, "");
 
                     var worker = ChromeWorker("chrome://browseridp/content/crypto.js?" + Date.now());
                     worker.onmessage = function(event) {
@@ -64,7 +64,7 @@
                             }
                             result = event.data.signature;
                             Cu.reportError('got cert: ' + JSON.stringify(event.data));
-                            navigator.id.registerCertificate((data + "." + result).replace(/=/g, ""));
+                            navigator.id.registerCertificate(data + "." + result.replace(/=+$/, ""));
                         } catch (ex) {
                             navigator.id.raiseProvisioningFailure("Failed to provision: exception " + String(ex));
                             Cu.reportError(ex);
