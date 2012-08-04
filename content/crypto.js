@@ -247,6 +247,148 @@ function encryptPrivateKey(privateKey, password="", nss3=null, nspr4=null, slot=
 }
 
 /**
+ * Decrypts a previously encrypted private key
+ * @param publicKey {Object} Public key info; must have .alg field, and for
+ *      RSA-based algorithms, have a .mod field
+ * @param encryptedPrivateKey {Object} the previously encrypted private key;
+ *      must have .alg.id, .alg.params, and .data fields
+ * @param password {String} The password to decrypt with
+ * @param [optional] nss3 {ctypes.Library} NSS library pointer
+ * @param [optional] nspr4 {ctypes.Library} NSPR library pointer
+ * @param [optional] slot {PK11SlotInfo.ptr} slot
+ * @returns SECKEYPrivateKey.ptr
+ * @note The caller must call SECKEY_DestroyPrivateKey on the return value
+ */
+function decryptPrivateKey(publicKey, encryptedPrivateKey,
+                           password="", nss3=null, nspr4=null, slot=null) {
+    var free = {};
+    try {
+        // Make sure we have the libraries we need
+        if (!nspr4) {
+            nspr4 = ctypes.open(ctypes.libraryName("nspr4"));
+            free.nspr4 = true;
+        }
+        if (!nss3) {
+            nss3 = ctypes.open(ctypes.libraryName("nss3"));
+            free.nss3 = true;
+        }
+
+        // Declare the functions used
+        var PR_GetError =
+            nspr4.declare("PR_GetError",
+                          ABI,
+                          ctypes.int32_t);
+        var PK11_GetInternalSlot =
+            nss3.declare("PK11_GetInternalSlot",
+                         ABI,
+                         PK11SlotInfo.ptr);
+        var PK11_FreeSlot =
+            nss3.declare("PK11_FreeSlot",
+                         ABI,
+                         ctypes.void_t,
+                         PK11SlotInfo.ptr);
+        var PK11_GetKeyType =
+            nss3.declare("PK11_GetKeyType",
+                         ABI,
+                         CK_MECHANISM_TYPE,
+                         CK_MECHANISM_TYPE, // type
+                         ctypes.unsigned_long); // len
+        var PK11_ImportEncryptedPrivateKeyInfoAndReturnKey =
+            nss3.declare("PK11_ImportEncryptedPrivateKeyInfoAndReturnKey",
+                         ABI,
+                         SECStatus,
+                         PK11SlotInfo.ptr, // slot
+                         SECKEYEncryptedPrivateKeyInfo.ptr, // epki
+                         SECItem.ptr, // pwitem
+                         SECItem.ptr, // nickname
+                         SECItem.ptr, // publicValue
+                         ctypes.bool, // isPerm
+                         ctypes.bool, // isPrivate
+                         ctypes.int, // type
+                         ctypes.unsigned_int, // usage
+                         SECKEYPrivateKey.ptr.ptr, // privk
+                         ctypes.voidptr_t); // wincx
+
+        if (!slot) {
+            slot = PK11_GetInternalSlot();
+            if (!slot) {
+                throw { rv: PR_GetError() || -1,
+                        message: "Failed to get internal slot" };
+            }
+            free.slot = true;
+        }
+
+        // Load the public key
+        var publicValue, usage, keyType, tag;
+        if (/^RS/.test(publicKey.alg)) {
+            publicValue = decodeSECItem(publicKey.mod);
+            usage = [CKA_SIGN, CKA_DECRYPT, CKA_SIGN_RECOVER, CKA_UNWRAP];
+            keyType = PK11_GetKeyType(CKM_RSA_PKCS_KEY_PAIR_GEN, 0);
+            const tags = {
+                RS256: SEC_OID_PKCS1_SHA256_WITH_RSA_ENCRYPTION,
+                RS384: SEC_OID_PKCS1_SHA384_WITH_RSA_ENCRYPTION,
+                RS512: SEC_OID_PKCS1_SHA512_WITH_RSA_ENCRYPTION,
+            }
+            if (!(publicKey.alg in tags)) {
+                throw { rv: -1,
+                        message: "public key uses unsupported algorithm " +
+                                 publicKey.alg };
+            }
+            tag = tags[publicKey.alg];
+        } else {
+            throw { rv: -1,
+                    message: "public key uses unsupport algorithm family " +
+                             publicKey.alg };
+        }
+        let usageItem = CK_ATTRIBUTE_TYPE.array(usage.length)(usage);
+
+        password = unescape(encodeURIComponent(password)); // cast UTF8 -> bytes
+        let passwordItem = new SECItem();
+        passwordItem.type = SECItemType.siBuffer;
+        passwordItem._buffer = ctypes.uint8_t.array(password.length)
+                                    ([password.charCodeAt(i) for (i in range(password.length))]);
+        passwordItem.data = ctypes.cast(passwordItem._buffer.address(),
+                                        ctypes.uint8_t.ptr);
+        passwordItem.length = passwordItem._buffer.length;
+
+        let nickname = new SECItem(0, null, 0);
+        var privkey = new SECKEYPrivateKey.ptr();
+        let epki = new SECKEYEncryptedPrivateKeyInfo();
+        epki.arena = null;
+        epki.algorithm = new SECAlgorithmID();
+        epki.algorithm.algorithm = decodeSECItem(encryptedPrivateKey.alg.id);
+        epki.algorithm.parameters = decodeSECItem(encryptedPrivateKey.alg.params);
+        epki.encryptedData = decodeSECItem(encryptedPrivateKey.data);
+
+        var rv = PK11_ImportEncryptedPrivateKeyInfoAndReturnKey(slot,
+                                                                epki.address(),
+                                                                passwordItem.address(),
+                                                                nickname.address(),
+                                                                publicValue.address(),
+                                                                false,
+                                                                false,
+                                                                keyType,
+                                                                CKA_SIGN,
+                                                                privkey.address(),
+                                                                null);
+        if (rv || privkey.isNull()) {
+            throw { rv: PR_GetError() || -1,
+                    message: "Failed to import private key" };
+        }
+        
+        return privkey;
+
+    } finally {
+        if (("slot" in free) && slot)
+            PK11_FreeSlot(slot);
+        if (("nss3" in free) && nss3)
+            nss3.close();
+        if (("nspr4" in free) && nspr4)
+            nspr4.close();
+    }
+}
+
+/**
  * Generate a key pair
  */
 function generate(params) {
@@ -383,36 +525,6 @@ function sign(params) {
                           ABI,
                           ctypes.int32_t);
         var nss3 = ctypes.open(ctypes.libraryName("nss3"));
-        var PK11_GetInternalSlot =
-            nss3.declare("PK11_GetInternalSlot",
-                         ABI,
-                         PK11SlotInfo.ptr);
-        var PK11_FreeSlot =
-            nss3.declare("PK11_FreeSlot",
-                         ABI,
-                         ctypes.void_t,
-                         PK11SlotInfo.ptr);
-        var PK11_GetKeyType =
-            nss3.declare("PK11_GetKeyType",
-                         ABI,
-                         CK_MECHANISM_TYPE,
-                         CK_MECHANISM_TYPE, // type
-                         ctypes.unsigned_long); // len
-        var PK11_ImportEncryptedPrivateKeyInfoAndReturnKey =
-            nss3.declare("PK11_ImportEncryptedPrivateKeyInfoAndReturnKey",
-                         ABI,
-                         SECStatus,
-                         PK11SlotInfo.ptr, // slot
-                         SECKEYEncryptedPrivateKeyInfo.ptr, // epki
-                         SECItem.ptr, // pwitem
-                         SECItem.ptr, // nickname
-                         SECItem.ptr, // publicValue
-                         ctypes.bool, // isPerm
-                         ctypes.bool, // isPrivate
-                         ctypes.int, // type
-                         ctypes.unsigned_int, // usage
-                         SECKEYPrivateKey.ptr.ptr, // privk
-                         ctypes.voidptr_t); // wincx
         var SECKEY_DestroyPrivateKey =
             nss3.declare("SECKEY_DestroyPrivateKey",
                          ABI,
@@ -428,18 +540,17 @@ function sign(params) {
                          SECKEYPrivateKey.ptr, // pk
                          SECOidTag); // tag
 
-        var slot = PK11_GetInternalSlot();
-        if (!slot) {
-            throw { rv: PR_GetError() || -1,
-                    message: "Failed to get PK11 internal slot" };
+        var privkey = decryptPrivateKey(params.pubkey,
+                                        params.privkey,
+                                        "",
+                                        nss3, nspr4);
+        if (!privkey || privkey.isNull()) {
+            throw { rv: -1,
+                    message: "Failed to decrypt private key" };
         }
 
-        // Load the public key
-        var publicValue, usage, keyType, tag;
+        var tag;
         if (/^RS/.test(params.pubkey.alg)) {
-            publicValue = decodeSECItem(params.pubkey.mod);
-            usage = [CKA_SIGN, CKA_DECRYPT, CKA_SIGN_RECOVER, CKA_UNWRAP];
-            keyType = PK11_GetKeyType(CKM_RSA_PKCS_KEY_PAIR_GEN, 0);
             const tags = {
                 RS256: SEC_OID_PKCS1_SHA256_WITH_RSA_ENCRYPTION,
                 RS384: SEC_OID_PKCS1_SHA384_WITH_RSA_ENCRYPTION,
@@ -455,32 +566,6 @@ function sign(params) {
             throw { rv: -1,
                     message: "public key uses unsupport algorithm family " +
                              params.pubkey.alg };
-        }
-        let usageItem = CK_ATTRIBUTE_TYPE.array(usage.length)(usage);
-
-        let password = new SECItem(0, null, 0);
-        let nickname = new SECItem(0, null, 0);
-        var privkey = new SECKEYPrivateKey.ptr();
-        let epki = new SECKEYEncryptedPrivateKeyInfo();
-        epki.arena = null;
-        epki.algorithm = new SECAlgorithmID();
-        epki.algorithm.algorithm = decodeSECItem(params.privkey.alg.id);
-        epki.algorithm.parameters = decodeSECItem(params.privkey.alg.params);
-        epki.encryptedData = decodeSECItem(params.privkey.data);
-        var rv = PK11_ImportEncryptedPrivateKeyInfoAndReturnKey(slot,
-                                                                epki.address(),
-                                                                password.address(),
-                                                                nickname.address(),
-                                                                publicValue.address(),
-                                                                false,
-                                                                false,
-                                                                keyType,
-                                                                CKA_SIGN,
-                                                                privkey.address(),
-                                                                null);
-        if (rv || privkey.isNull()) {
-            throw { rv: PR_GetError() || -1,
-                    message: "Failed to import private key" };
         }
 
         let signedData = new SECItem();
@@ -506,8 +591,6 @@ function sign(params) {
         // clean up
         if (privkey)
             SECKEY_DestroyPrivateKey(privkey);
-        if (slot)
-            PK11_FreeSlot(slot);
         if (nss3)
             nss3.close();
         if (nspr4)
