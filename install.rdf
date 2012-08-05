@@ -4,7 +4,7 @@
     <Description about="urn:mozilla:install-manifest">
         <em:id>browseridp@mook.github.com</em:id>
         <em:name>browseridp</em:name>
-        <em:version>0.0.0.20120804</em:version>
+        <em:version>0.0.1</em:version>
         <em:description>Browser-based identity provider for Mozilla Persona</em:description>
         <em:creator>Mook</em:creator>
         <em:homepageURL>http://mook.github.com/browseridp/</em:homepageURL>
