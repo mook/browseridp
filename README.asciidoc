@@ -11,8 +11,8 @@ BrowserIdP is an experimental stab at implementing a https://www.persona.org/[Mo
 . Go to addon options, and click on the _Generate_ button
 . Enter the your hostname when prompted (i.e. the part after @ in your desired identities)
 . Click on _Copy JSON_ after a key has been generated
-. Upload the contents of your clipboard as +/.well-known/browserid+ on your server (i.e. +https://hostname/.well-known/browserid+)
-. Login to a Persona-based site, such as (http://123done.org/)
+. Upload the contents of your clipboard as +/.well-known/browserid+ on your server (i.e. +https://example.com/.well-known/browserid+).
+. Login to a Persona-based site, such as http://123done.org/
 
 The keys are stored in the Firefox/Gecko Login Manager; filter for "x-browseridp:" in your saved passwords to see them.
 
