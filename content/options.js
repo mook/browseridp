@@ -33,6 +33,73 @@ function error(msg, ...rest) {
                                  rest.join(", "));
 }
 
+if (typeof(atob) === "undefined") {
+    Components.utils.getGlobalForObject({}).atob = function atob(str) {
+        // Implement our own atob() (base64 decoder).  This should be the same
+        // as ths standard one, except a lot slower.
+        function doChunk(chunk) {
+            const kDigits = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            chunk = chunk.replace(/=+$/, "");
+            let parts = [ kDigits.indexOf(chunk[i]) for (i in chunk) ];
+            let sum = parts[0] << 18 |
+                      parts[1] << 12 |
+                      parts[2] <<  6 |
+                      parts[3] <<  0 ;
+            let result = [ (sum >>> 16) & 0xFF,
+                           (sum >>>  8) & 0xFF,
+                           (sum >>>  0) & 0xFF ];
+            return result.slice(0, chunk.length - 1);
+        }
+        let result = [];
+        for (let i = 0; i < str.length; i += 4) {
+            result.push.apply(result, doChunk(str.substr(i, i + 4)));
+        }
+        return result.map(function(c) String.fromCharCode(c)).join("");
+    };
+}
+
+/**
+ * base64-to-decimal converter, to support old-style .well-known files
+ */
+function base64ToDecimal(str) {
+    // The digits of the result, in base 256
+    const octets = new Uint8Array(atob(str).split("").map(function(c) c.charCodeAt(0)).reverse());
+    //print("octets: " + [octets[i].toString(10) for (i in octets)]);
+    // The maximum number of decimal digits in the result
+    const length = Math.ceil(octets.length * Math.log(256) / Math.log(10));
+    // The final result, expressed as BCD (little-endian)
+    let result = new Uint8Array(length);
+    // The upcoming power of 256, expressed as BCD (little-endian)
+    let base = new Uint8Array(length);
+    base[0] = 1;
+    for (let i = 0; i < octets.length; ++i) {
+        // The value of this (base-256) digit
+        let value = new Uint8Array(base);
+        // multiply base by octets[i]
+        let carry = 0;
+        for (let j = 0; j < length; ++j) {
+            carry += value[j] * octets[i];
+            value[j] = carry % 10;
+            carry = (carry - value[j]) / 10;
+        }
+        // add the result
+        carry = 0;
+        for (let j = 0; j < length; ++j) {
+            carry = carry + result[j] + value[j];
+            result[j] = carry % 10;
+            carry = (carry / 10) >>> 0;
+        }
+        // caclculate the next base
+        carry = 0;
+        for (let j = 0; j < length; ++j) {
+            carry += base[j] * 256;
+            base[j] = carry % 10;
+            carry = (carry - base[j]) / 10;
+        }
+    }
+    return [result[x] for (x in result)].reverse().join("").replace(/^0+/, "");
+}
+
 const Options = {
     startup: function Options_startup(data) {
         this.addonData = data;
@@ -272,6 +339,8 @@ const Options = {
             // invalid exponents and everything dies.
             "modulus": (pubkey.mod || "").replace(/-/g, "+").replace(/_/g, "/"),
             "exponent": (pubkey.exp || "").replace(/-/g, "+").replace(/_/g, "/"),
+            "n": base64ToDecimal((pubkey.mod || "").replace(/-/g, "+").replace(/_/g, "/")),
+            "e": base64ToDecimal((pubkey.exp || "").replace(/-/g, "+").replace(/_/g, "/")),
         })) {
             params["public-key"][k] = v;
         }
