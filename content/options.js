@@ -328,8 +328,8 @@ const Options = {
         let pubkey = JSON.parse(login.username);
         let params = {
             "public-key": pubkey,
-            "authentication": "chrome://browseridp/content/sign_in.html",
-            "provisioning": "chrome://browseridp/content/provision.html",
+            "authentication": "/.well-known/browserid#authentication",
+            "provisioning": "/.well-known/browserid#provisioning",
         };
         for (let [k, v] in Iterator({
             "version": "2012.08.15",
