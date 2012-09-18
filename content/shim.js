@@ -1,7 +1,4 @@
 (function() {
-  function dump() {
-    /* no op */
-  }
   if (navigator.id) {
     return; // native implementation available
   }

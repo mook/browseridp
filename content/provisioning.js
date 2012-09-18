@@ -1,33 +1,19 @@
-(function() {
-  function dump(data) {
-    window.postMessage({
-      origin: "browseridp-client",
-      command: "dump",
-      data: data
-    }, "*");
+window.addEventListener("message", function(event) {
+  if (event.origin != document.location.protocol + "//" + document.domain) {
+    return; // Not from ourselves
   }
-  function dispatch(method, params) {
-    let data = {};
-    for (let [k, v] in Iterator(params)) data[k] = v;
-    data.origin = "browseridp-client";
-    data.command = method;
-    window.postMessage(data, "*");
-  }
-  window.addEventListener("message", function(event) {
-    if (event.origin != document.location.protocol + "//" + document.domain) {
-      return; // Not from ourselves
-    }
-    try {
-      if (event.data.origin == "browseridp-client") {
-        return;
-      }
-    } catch (ex) {}
-    if (event.data.origin != "browseridp-host") {
+  try {
+    if (event.data.origin == "browseridp-client") {
       return;
     }
-    navigator.id[event.data.command].apply(navigator.id, event.data.args);
-  }, false);
+  } catch (ex) {}
+  if (event.data.origin != "browseridp-host") {
+    return;
+  }
+  navigator.id[event.data.command].apply(navigator.id, event.data.args);
+}, false);
 
+function start() {
   dump("being provisioning...");
   navigator.id.beginProvisioning(function(email, cert_duration) {
     let host = String(email).replace(/^.*@/, "");
@@ -43,11 +29,13 @@
 
     // Assume for now we have a key for this host; we can fail later.
     navigator.id.genKeyPair(function(pubkey) {
-      dispatch('sign', {
+      sign({
           email: email,
           expiry: cert_expiry,
           pubkey: pubkey,
         });
     });
   });
-})();
+}
+
+dump("privisioning script ready.");
