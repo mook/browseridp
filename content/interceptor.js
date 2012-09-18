@@ -40,15 +40,16 @@ const Interceptor = {
                                                     aStateFlags,
                                                     aStatus)
   {
-    const kRequiredFlags = Ci.nsIWebProgressListener.STATE_STATE |
-                           Ci.nsIWebProgressListener.STATE_IS_SECURE;
-    if ((aStateFlags & kRequiredFlags != kRequiredFlags) ||
-      !(aRequest instanceof Ci.nsIHttpChannel) ||
-      !aRequest.URI.schemeIs("https") ||
-      (aWebProgress.DOMWindow.document.contentType != "application/json"))
+    if (!(aStateFlags & Ci.nsIWebProgressListener.STATE_STOP) ||
+        !(aRequest instanceof Ci.nsIHttpChannel) ||
+        !aRequest.URI.schemeIs("https") ||
+        (aWebProgress.DOMWindow.document.contentType != "application/json"))
     {
       return;
     }
+
+    // Can't get this before the if() check above, otherwise things die :(
+    const window = aWebProgress.DOMWindow;
     // Do various checks to make sure it's a URL we want to intercept
     switch (aRequest.URI.path) {
       case "/.well-known/browserid#authentication":
@@ -68,24 +69,29 @@ const Interceptor = {
     // At this point, we know that aWebProgress.DOMWindow is good and the
     // load has completed; we can start injecting things into it
 
+    // Check if we need the shim
+    let shimURL = null;
+    try {
+      shimURL = Services.io.newURI(window.frameElement.ownerDocument.documentURI,
+                                   null, null);
+    } catch (ex) { /* ignore, this happens with native browserid */ }
+    if (shimURL) {
+      window.document
+            .documentElement
+            .setAttribute("shimServer", shimURL.prePath);
+      Services.scriptloader.loadSubScript("chrome://browseridp/content/shim.js",
+                                          window);
+    }
+
     debug("Loading script",
           "chrome://browseridp/content/" + aRequest.URI.ref + ".js");
     Interceptor._pendingWindows[aRequest.URI.prePath] = {
         type: aRequest.URI.ref,
-        window: Components.utils.getWeakReference(aWebProgress.DOMWindow),
+        window: Components.utils.getWeakReference(window),
       };
-    let shimURL = "*";
-    try {
-      shimURL = Services.io.newURI(aWebProgress.DOMWindow.frameElement.ownerDocument.documentURI,
-                                   null, null);
-    } catch (ex) { /* ignore, this happens with native browserid */ }
-    aWebProgress.DOMWindow
-                .document
-                .documentElement
-                .setAttribute("shimServer", shimURL.prePath);
-    aWebProgress.DOMWindow.addEventListener("message", this, false);
+    window.addEventListener("message", this, false);
     Services.scriptloader.loadSubScript("chrome://browseridp/content/" + aRequest.URI.ref + ".js",
-                                        aWebProgress.DOMWindow);
+                                        window);
   },
   onProgressChange: function Interceptor_onProgressChange() undefined,
   onLocationChange: function Interceptor_onLocationChange() undefined,
