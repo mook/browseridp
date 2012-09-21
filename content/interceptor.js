@@ -150,6 +150,7 @@ const Interceptor = {
 
     let header = {"typ": "JWT", "alg": "RS256"};
     let payload = {"iss": host,
+                   "iat": Date.now(),
                    "exp": cert_expiry,
                    "public-key": args.pubkey,
                    "principal": {
