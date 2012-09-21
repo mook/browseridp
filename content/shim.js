@@ -8,7 +8,8 @@
   document.documentElement.removeAttribute("shimServer");
 
   let ready = false;
-  let transId = 1;
+  // use a large odd number for the initial transcation ID
+  let transId = Date.now() * Math.random() >>> 2 | 1 << 28 | 1;
   let callbacks = {};
   let queue = [];
 
