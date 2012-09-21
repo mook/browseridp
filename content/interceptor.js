@@ -42,7 +42,9 @@ const Interceptor = {
   {
     if (!(aStateFlags & Ci.nsIWebProgressListener.STATE_STOP) ||
         !(aRequest instanceof Ci.nsIHttpChannel) ||
-        !aRequest.URI.schemeIs("https") ||
+        !aRequest.securityInfo ||
+        !(aRequest.securityInfo instanceof Ci.nsITransportSecurityInfo) ||
+        !(aRequest.securityInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_SECURE ) ||
         (aWebProgress.DOMWindow.document.contentType != "application/json"))
     {
       return;
