@@ -145,12 +145,15 @@ const Interceptor = {
     }
     let login = logins[0];
 
+    // pretend to issue the cert in the past to work around clock skew
+    // see https://github.com/mozilla/browserid/issues/2814
+    let cert_issued_at = Date.now() - 60 * 1000;
     // refuse to issue certs longer than 10 minutes
-    let cert_expiry = Math.min(args.expiry, Date.now() + 10 * 60 * 1000);
+    let cert_expiry = Math.min(args.expiry, cert_issued_at + 10 * 60 * 1000);
 
     let header = {"typ": "JWT", "alg": "RS256"};
     let payload = {"iss": host,
-                   "iat": Date.now(),
+                   "iat": cert_issued_at,
                    "exp": cert_expiry,
                    "public-key": args.pubkey,
                    "principal": {
